@@ -19,7 +19,8 @@ Arquitectura mínima: servidor Python local + base de datos SQLite + frontend HT
 - **Exportación PDF**: semana individual o curso completo (multipágina), sin diálogo de impresión
 - **Multi-grado**: cada titulación tiene su propia carpeta, BD y configuración independiente
 - **Calendario configurable**: festivos, vacaciones y días no lectivos por cuatrimestre
-- **Compatible con Dropbox/OneDrive**: los launchers copian la BD a `/tmp` antes de arrancar
+- **Compatible con Dropbox/OneDrive**: los launchers copian la BD a `/tmp` (macOS) o `%TEMP%` (Windows) antes de arrancar
+- **Multiplataforma**: launchers `.command` para macOS y `.bat` para Windows
 
 ---
 
@@ -41,24 +42,34 @@ IAnus/
     │   ├── config.json
     │   ├── horarios_2627.db
     │   ├── fichas.pdf
-    │   ├── Iniciar Horarios GIM 2627.command
-    │   └── Iniciar Editor GIM.command
+    │   ├── Iniciar Horarios GIM 2627.command  # macOS
+    │   ├── Iniciar Horarios GIM 2627.bat      # Windows
+    │   ├── Iniciar Editor GIM.command
+    │   └── Iniciar Editor GIM.bat
     └── GIDI/                  # Grado en Ingeniería de Diseño Industrial
         ├── config.json
         ├── horariosGIDI.db
         ├── actividades_formativas_GIDI.xlsx
         ├── asignaturas_GIDI.csv
         ├── Iniciar Horarios GIDI.command
-        └── Iniciar Editor GIDI.command
+        ├── Iniciar Horarios GIDI.bat
+        ├── Iniciar Editor GIDI.command
+        └── Iniciar Editor GIDI.bat
 ```
 
 ---
 
 ## Arrancar el servidor
 
-### Forma recomendada (macOS)
+### macOS — forma recomendada
 
 Doble clic en el fichero `.command` del grado correspondiente. Los launchers copian la BD a `/tmp` antes de arrancar para evitar errores de I/O en carpetas sincronizadas (Dropbox, OneDrive, iCloud).
+
+### Windows
+
+Doble clic en el fichero `.bat` del grado correspondiente. Requiere Python 3.9+ instalado y en el PATH.
+
+> ⚠️ **Importante:** para que los cambios en el horario se guarden correctamente, cierra el servidor **pulsando cualquier tecla** en la ventana de comandos, no con el botón X. Al cerrar con la X el proceso termina sin copiar la base de datos de vuelta.
 
 ### Manual
 
