@@ -81,7 +81,14 @@ Requiere `lsof` y `curl` instalados (`sudo apt install lsof curl`). El navegador
 
 ### Windows
 
-Doble clic en el fichero `.bat` del grado correspondiente. Requiere Python 3.9+ instalado y en el PATH.
+Doble clic en el fichero `.bat` del grado correspondiente.
+
+**Prerequisito — Python 3.9 o superior:**
+1. Descarga el instalador desde [python.org/downloads](https://www.python.org/downloads/)
+2. Durante la instalación, marca **"Add Python to PATH"** (imprescindible)
+3. Completa la instalación y haz doble clic en el `.bat`
+
+Si Python no está instalado, el launcher mostrará un mensaje de error con estas mismas instrucciones.
 
 > ⚠️ **Importante:** para que los cambios en el horario se guarden correctamente, cierra el servidor **pulsando cualquier tecla** en la ventana de comandos, no con el botón X. Al cerrar con la X el proceso termina sin copiar la base de datos de vuelta.
 

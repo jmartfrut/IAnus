@@ -13,6 +13,22 @@ echo  Gestor de Horarios GIDI  (2026-2027)
 echo  UPCT
 echo ----------------------------------------
 
+REM Verificar que Python esta instalado
+python --version > nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Python no esta instalado o no esta en el PATH.
+    echo.
+    echo  Para instalar Python:
+    echo  1. Ve a https://www.python.org/downloads/
+    echo  2. Descarga la version mas reciente (3.9 o superior)
+    echo  3. En el instalador, marca "Add Python to PATH"  ^<-- MUY IMPORTANTE
+    echo  4. Completa la instalacion y vuelve a ejecutar este fichero
+    echo.
+    pause
+    exit /b 1
+)
+
 REM Matar proceso anterior en puerto 8080
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr /r ":8080 "') do (
     taskkill /F /PID %%a > nul 2>&1
