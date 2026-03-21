@@ -4,6 +4,22 @@
 
 # IAnus — Gestor de Horarios Universitarios
 
+<p align="center">
+  <a href="https://jmartfrut.github.io/IAnus/">
+    <img src="docs/preview.png" alt="Ver presentación interactiva" width="100%"/>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://jmartfrut.github.io/IAnus/">
+    <img src="https://img.shields.io/badge/📊%20Presentaci%C3%B3n%20Interactiva-GitHub%20Pages-111e3a?style=for-the-badge" alt="Ver presentación"/>
+  </a>
+</p>
+
+> 💡 **Haz clic en la imagen** para abrir la presentación interactiva en GitHub Pages (navega con ← → o las teclas de flecha).
+
+---
+
 Herramienta para visualizar, editar y verificar horarios de titulaciones universitarias. Desarrollada originalmente para la **UPCT** (Universidad Politécnica de Cartagena), soporta múltiples grados de forma independiente.
 
 Arquitectura mínima: servidor Python local + base de datos SQLite + frontend HTML/JS en un solo fichero. Sin dependencias de framework, sin instalación compleja.
