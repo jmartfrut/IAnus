@@ -37,8 +37,8 @@ IAnus/
 ├── Grado.command              # Lanzador macOS para crear un grado
 ├── Grado.sh                   # Lanzador Linux para crear un grado
 ├── Grado.bat                  # Lanzador Windows para crear un grado
-├── CLAUDE.md                  # Instrucciones para el asistente IA
-├── TECHNICAL.md               # Documentación técnica detallada
+├── LICENSE.md
+├── README.md
 ├── docs/
 │   ├── logo_ianus.svg         # Logo IAnus (interfaz web)
 │   ├── logo.svg               # Logo institucional (SVG)
