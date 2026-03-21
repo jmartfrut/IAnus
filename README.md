@@ -29,30 +29,28 @@ Arquitectura mínima: servidor Python local + base de datos SQLite + frontend HT
 ```
 IAnus/
 ├── servidor_horarios.py       # Servidor + frontend completo (único fichero)
-├── editor_server.py           # Servidor auxiliar del editor de config
-├── config_editor.html         # Editor visual de config.json
-├── setup_grado.py             # Asistente para crear un nuevo grado
+├── nuevo_grado.py             # Asistente interactivo para crear un nuevo grado
+├── setup_grado.py             # Inicialización de la estructura de un grado
+├── importar_horarios.py       # Importación de horarios desde Excel
 ├── exportar_excel.py          # Exportación a Excel
 ├── exportar_finales_pdf.py    # Exportación de exámenes finales a PDF
+├── Crear Nuevo Grado.command  # Lanzador macOS para crear un grado
+├── Crear Nuevo Grado.sh       # Lanzador Linux para crear un grado
+├── Crear Nuevo Grado.bat      # Lanzador Windows para crear un grado
+├── HORARIOS/                  # Ficheros fuente de horarios (Excel y PDF por grado)
 ├── docs/
+│   ├── logo_ianus.svg
+│   ├── logo_thumb.png
 │   ├── logo_upct.png
 │   └── logo.pdf
-└── grados/
-    ├── GIM/                   # Grado en Ingeniería Mecánica
-    │   ├── config.json
-    │   ├── horarios_2627.db
-    │   ├── fichas.pdf
-    │   ├── Iniciar Horarios GIM 2627.command  # macOS
-    │   ├── Iniciar Horarios GIM 2627.sh       # Linux
-    │   └── Iniciar Horarios GIM 2627.bat      # Windows
-    └── GIDI/                  # Grado en Ingeniería de Diseño Industrial
+└── grados/                    # ⚠️ No versionado — generado localmente por cada instalación
+    └── <NOMBRE_GRADO>/
         ├── config.json
-        ├── horariosGIDI.db
-        ├── actividades_formativas_GIDI.xlsx
-        ├── asignaturas_GIDI.csv
-        ├── Iniciar Horarios GIDI.command
-        ├── Iniciar Horarios GIDI.sh
-        └── Iniciar Horarios GIDI.bat
+        ├── horarios.db
+        ├── fichas.pdf
+        ├── Iniciar Horarios <GRADO>.command   # macOS
+        ├── Iniciar Horarios <GRADO>.sh        # Linux
+        └── Iniciar Horarios <GRADO>.bat       # Windows
 ```
 
 ---
