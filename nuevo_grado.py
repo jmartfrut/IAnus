@@ -1513,6 +1513,7 @@ def main():
     url = f'http://localhost:{PORT}'
     print(f'Iniciando wizard en {url}')
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    HTTPServer.allow_reuse_address = True
     server = HTTPServer(('localhost', PORT), WizardHandler)
     try:
         server.serve_forever()
