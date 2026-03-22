@@ -5,16 +5,12 @@
 # IAnus — Gestor de Horarios Universitarios
 
 <p align="center">
-  <img src="docs/img/slide_01.jpg" alt="IAnus — Presentación" width="100%"/>
-</p>
-
-<p align="center">
-  <a href="presentacion.html">
-    <img src="https://img.shields.io/badge/▶%20Abrir%20presentaci%C3%B3n-HTML%20local-111e3a?style=for-the-badge&logo=html5&logoColor=e8a020" alt="Abrir presentación"/>
+  <a href="docs/presentacion.pdf">
+    <img src="docs/img/slide_01.jpg" alt="IAnus — Ver presentación" width="100%"/>
   </a>
 </p>
 
-> 💡 Descarga o clona el repo y abre **`presentacion.html`** con doble clic (navega con ← → o las teclas de flecha). No necesita internet ni servidor.
+> 💡 **Haz clic en la imagen** para abrir la presentación en el navegador.
 
 ---
 
