@@ -345,41 +345,69 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
 <!-- ══════ STEP 4: ACTIVIDADES ══════ -->
 <div class="card" id="step4" style="display:none">
   <h2>4 · Tipos de Actividad Formativa</h2>
-  <div class="desc">Cómo se identifican las actividades según el campo "aula" en los Excel. AF5 y AF6 son solo para fichas docentes.</div>
+  <div class="desc">
+    Cada clase tiene un campo <strong>Tipo</strong> seleccionable en la interfaz de horarios.
+    El tipo determina cómo se contabiliza la actividad en las estadísticas.
+    Los tipos con fondo azul tienen categoría AF fija. Los marcados con <strong>—</strong>
+    son editables: elige en qué categoría encajan para que se contabilicen correctamente.
+  </div>
 
-  <table class="af-table">
+  <table class="af-table" style="margin-top:16px">
     <thead>
       <tr>
-        <th style="width:50px">Tipo</th>
-        <th>Etiqueta visible</th>
-        <th>Aula exacta (separa con comas)</th>
-        <th>Aula empieza por (separa con comas)</th>
+        <th style="width:80px">Código</th>
+        <th>Descripción</th>
+        <th style="width:160px;text-align:center">Contabiliza como</th>
       </tr>
     </thead>
     <tbody>
-      <tr>
-        <td><strong>AF1</strong></td>
-        <td><input type="text" id="af1-label" value="Teoría"></td>
-        <td><input type="text" id="af1-exact" value="" placeholder='vacío = ""'></td>
-        <td><input type="text" id="af1-starts" value="" placeholder="(ninguno)"></td>
-      </tr>
-      <tr>
-        <td><strong>AF2</strong></td>
-        <td><input type="text" id="af2-label" value="Laboratorio"></td>
-        <td><input type="text" id="af2-exact" value="LAB"></td>
-        <td><input type="text" id="af2-starts" value="" placeholder="(ninguno)"></td>
-      </tr>
-      <tr>
-        <td><strong>AF4</strong></td>
-        <td><input type="text" id="af4-label" value="Informática"></td>
-        <td><input type="text" id="af4-exact" value="INFO"></td>
-        <td><input type="text" id="af4-starts" value="" placeholder="(ninguno)"></td>
-      </tr>
+      <tr style="background:#eef4ff"><td><strong>INF</strong></td><td>Actividad práctica informática</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF4</td></tr>
+      <tr style="background:#eef4ff"><td><strong>LAB</strong></td><td>Actividad práctica laboratorio, campo, planta piloto...</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF2</td></tr>
+      <tr style="background:#eef4ff"><td><strong>SEM</strong></td><td>Actividad asistencia seminarios, visitas externas,...</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF3</td></tr>
+      <tr style="background:#eef4ff"><td><strong>EXP</strong></td><td>Examen parcial</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF5</td></tr>
+      <tr style="background:#eef4ff"><td><strong>EXF</strong></td><td>Examen final</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF6</td></tr>
+      <tr style="background:#eef4ff"><td><strong>CPA</strong></td><td>Clase práctica en el aula</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF1</td></tr>
+      <tr><td><strong>TLL</strong></td><td>Actividad práctica en taller</td><td class="tipo-af-cell" data-code="TLL"></td></tr>
+      <tr><td><strong>AD</strong></td><td>Actividad docente presencial</td><td class="tipo-af-cell" data-code="AD"></td></tr>
+      <tr><td><strong>AE</strong></td><td>Actividad de evaluación</td><td class="tipo-af-cell" data-code="AE"></td></tr>
+      <tr><td><strong>AC</strong></td><td>Actividad cultural</td><td class="tipo-af-cell" data-code="AC"></td></tr>
+      <tr><td><strong>AP</strong></td><td>Actividad puntual</td><td class="tipo-af-cell" data-code="AP"></td></tr>
+      <tr><td><strong>ADI</strong></td><td>Courses taught in english</td><td class="tipo-af-cell" data-code="ADI"></td></tr>
+      <tr><td><strong>ADP</strong></td><td>Actividad docente práctica</td><td class="tipo-af-cell" data-code="ADP"></td></tr>
+      <tr><td><strong>AO</strong></td><td>Actividad docente online</td><td class="tipo-af-cell" data-code="AO"></td></tr>
+      <tr><td><strong>EPyOAE</strong></td><td>Exámenes parciales y otras actividades de evaluación</td><td class="tipo-af-cell" data-code="EPyOAE"></td></tr>
+      <tr><td><strong>AEO</strong></td><td>Actividad de evaluación online</td><td class="tipo-af-cell" data-code="AEO"></td></tr>
     </tbody>
   </table>
+  <script>
+  (function(){
+    const OPT = '<option value="">— no cuenta</option>'
+      + '<option value="AF1">AF1 · Teoría/Presencial</option>'
+      + '<option value="AF2">AF2 · Laboratorio</option>'
+      + '<option value="AF4">AF4 · Informática</option>'
+      + '<option value="AF5">AF5 · Eval. continua</option>'
+      + '<option value="AF6">AF6 · Eval. final</option>';
+    document.querySelectorAll('.tipo-af-cell').forEach(td => {
+      const code = td.dataset.code;
+      td.innerHTML = '<select id="tipo-af-' + code + '" style="width:100%">' + OPT + '</select>';
+    });
+  })();
+  </script>
   <div class="hint" style="margin-top:10px">
-    AF1 identifica clases cuyo campo "aula" está vacío. AF5 y AF6 son solo para fichas docentes (evaluación continua/final) y no necesitan configuración.
+    El tipo de cada clase se asigna manualmente en la interfaz de horarios.
+    Los tipos con categoría fija (fondo azul) se contabilizan automáticamente. Los editables solo cuentan si les asignas una categoría AF.
   </div>
+
+  <!-- Campos ocultos para compatibilidad con config.json (AF1/AF2/AF4 base) -->
+  <input type="hidden" id="af1-label" value="Teoría">
+  <input type="hidden" id="af1-exact" value="">
+  <input type="hidden" id="af1-starts" value="">
+  <input type="hidden" id="af2-label" value="Laboratorio">
+  <input type="hidden" id="af2-exact" value="LAB">
+  <input type="hidden" id="af2-starts" value="">
+  <input type="hidden" id="af4-label" value="Informática">
+  <input type="hidden" id="af4-exact" value="INF">
+  <input type="hidden" id="af4-starts" value="">
 
   <div class="actions">
     <button class="btn btn-secondary" onclick="goStep(3)">← Anterior</button>
@@ -944,10 +972,17 @@ function getEstructura() {
 }
 
 function getActividades() {
+  const EDITABLE_TIPOS = ['TLL','AD','AE','AC','AP','ADI','ADP','AO','EPyOAE','AEO'];
+  const tipoToAf = {};
+  EDITABLE_TIPOS.forEach(code => {
+    const sel = document.getElementById('tipo-af-' + code);
+    if (sel && sel.value) tipoToAf[code] = sel.value;
+  });
   return {
     AF1: { label: gv('af1-label'), aula_exact: gv('af1-exact'), aula_startswith: gv('af1-starts') },
     AF2: { label: gv('af2-label'), aula_exact: gv('af2-exact'), aula_startswith: gv('af2-starts') },
-    AF4: { label: gv('af4-label'), aula_exact: gv('af4-exact'), aula_startswith: gv('af4-starts') }
+    AF4: { label: gv('af4-label'), aula_exact: gv('af4-exact'), aula_startswith: gv('af4-starts') },
+    tipo_to_af: tipoToAf
   };
 }
 
@@ -1213,6 +1248,8 @@ def build_config(data):
     activity_types['AF5'] = {'fichas_only': True}
     activity_types['AF6'] = {'fichas_only': True}
 
+    tipo_to_af = {k: v for k, v in act.get('tipo_to_af', {}).items() if v}
+
     cfg = {
         '_comment': f"Configuración del Gestor de Horarios — {siglas}",
         'institution': {
@@ -1245,6 +1282,7 @@ def build_config(data):
             'bg':            ap.get('bg', '#f0f4f8')
         },
         'activity_types': activity_types,
+        'tipo_to_af': tipo_to_af,
         'ui': {
             'destacadas_badge': b.get('badge', ''),
             'export_prefix':    siglas

@@ -1,0 +1,62 @@
+# Control de versiones
+.git
+.gitignore
+.gitattributes
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pycache
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Bases de datos — se montan vía volumen en /app/data
+*.db
+*.db-wal
+*.db-shm
+
+# Copias de seguridad
+backups/
+
+# Ficheros Excel e inputs de reconstrucción
+# (no necesarios en producción; solo para rebuild_db.py)
+EXCELS/
+*.xlsx
+*.xls
+
+# PDFs de fichas (solo usados por rebuild_fichas.py)
+*.pdf
+
+# Ficheros de arranque macOS
+*.command
+
+# Launchers y scripts de escritorio
+Iniciar\ Horarios\ *
+
+# IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+*.log
+
+# Configuración local (si existe)
+config.local.json
+
+# Docker (evitar recursión)
+Dockerfile
+docker-compose.yml
+.dockerignore

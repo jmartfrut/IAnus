@@ -373,6 +373,7 @@ def create_tables(conn):
             franja_id       INTEGER REFERENCES franjas(id),
             asignatura_id   INTEGER REFERENCES asignaturas(id),
             aula            TEXT DEFAULT '',
+            tipo            TEXT DEFAULT '',
             subgrupo        TEXT DEFAULT '',
             observacion     TEXT DEFAULT '',
             es_no_lectivo   INTEGER DEFAULT 0,
@@ -633,8 +634,20 @@ def import_clases_desde_excel(conn, clases_importadas):
                 (asig_id,)
             )
 
-        # Determinar campo aula (LAB / INFO / aula especial / vacío = teoría)
-        aula      = aula_ov if aula_ov else tipo
+        # Determinar tipo de actividad a partir del campo tipo del Excel
+        # LAB → tipo_actividad = 'LAB'  (laboratorio)
+        # INFO → tipo_actividad = 'INF' (informática)
+        # vacío → tipo_actividad = ''   (sin especificar; el usuario lo asigna en la interfaz)
+        tipo_upper = tipo.upper()
+        if tipo_upper == 'LAB':
+            tipo_actividad = 'LAB'
+        elif tipo_upper in ('INFO', 'INF') or tipo_upper.startswith('INFO'):
+            tipo_actividad = 'INF'
+        else:
+            tipo_actividad = ''
+
+        # El campo aula es solo el nombre del aula (override), no el tipo
+        aula      = aula_ov
         contenido = f"[{codigo}] {nombre}"
         if tipo:
             contenido += f" | {tipo}"
@@ -662,17 +675,17 @@ def import_clases_desde_excel(conn, clases_importadas):
                     count_nolect += 1
                     continue
                 conn.execute(
-                    "UPDATE clases SET asignatura_id=?, aula=?, subgrupo=?, "
+                    "UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, "
                     "observacion='', es_no_lectivo=0, contenido=? WHERE id=?",
-                    (asig_id, aula, subgrupo, contenido, existing[0])
+                    (asig_id, aula, tipo_actividad, subgrupo, contenido, existing[0])
                 )
             else:
                 conn.execute(
                     "INSERT INTO clases "
-                    "(semana_id, dia, franja_id, asignatura_id, aula, subgrupo, "
+                    "(semana_id, dia, franja_id, asignatura_id, aula, tipo, subgrupo, "
                     " observacion, es_no_lectivo, contenido) "
-                    "VALUES (?,?,?,?,?,?,'',0,?)",
-                    (sem_id, dia, franja_id, asig_id, aula, subgrupo, contenido)
+                    "VALUES (?,?,?,?,?,?,?,'',0,?)",
+                    (sem_id, dia, franja_id, asig_id, aula, tipo_actividad, subgrupo, contenido)
                 )
             count_ok += 1
 

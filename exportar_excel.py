@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-exportar_excel.py — Exporta todos los horarios GIM al formato PLANTILLA_EXPORTACION.xlsx
+exportar_excel.py — Exporta todos los horarios al formato PLANTILLA_EXPORTACION.xlsx
 Uso standalone: python3 exportar_excel.py [ruta_salida.xlsx]
 Uso desde servidor: import exportar_excel; exportar_excel.exportar(db_path, template_path, output_path)
 """

@@ -1,0 +1,28 @@
+services:
+  gestor-horarios:
+    build: .
+    image: gestor-horarios:latest
+    container_name: gestor-horarios
+
+    ports:
+      - "${HOST_PORT:-8765}:${PORT:-8765}"
+
+    volumes:
+      # Directorio del host donde viven las bases de datos (.db)
+      # Montar aquí horarios.db y horarios_2627.db
+      - ./data:/app/data
+
+    environment:
+      PORT: "${PORT:-8765}"
+      DB_PATH: "${DB_PATH:-/app/data/horarios.db}"
+      CURSO_LABEL: "${CURSO_LABEL:-2025-2026}"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8765}/api/schedule')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Horario {{ DEGREE_ACRONYM }} – Base de Datos</title>
+<link rel="stylesheet" href="/static/horarios.css">
+<style>
+:root {
+  --primary: {{ COLOR_PRIMARY }}; --primary-light: {{ COLOR_PRIMARY_LIGHT }}; --accent: {{ COLOR_ACCENT }}; --bg: {{ COLOR_BG }};
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:16px">
+    <img src="/api/logo_svg" alt="Janux" style="height:68px;width:68px;border-radius:14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
+    <div>
+      <h1>Gestor de Horarios — {{ DEGREE_ACRONYM }} &nbsp;Curso {{ CURSO_LABEL }}</h1>
+      <div class="subtitle" id="headerSubtitle">{{ DEGREE_NAME }} · {{ INSTITUTION_ACRONYM }}</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="db-badge"><span>&#9679;</span> SQLite conectado</div>
+    <input type="file" id="importDBFile" accept=".db" style="display:none" onchange="importDBFileSelected(this)">
+    <button class="btn btn-outline btn-sm" id="btnImportDB" onclick="document.getElementById('importDBFile').click()" title="Sustituye la base de datos activa por un fichero .db seleccionado">&#128229; Importar</button>
+    <button class="btn btn-success btn-sm" id="btnSaveDB" onclick="saveDB()" title="Fuerza WAL checkpoint y sobreescribe la base de datos activa">&#128424; Guardar</button>
+    <button class="btn btn-outline btn-sm" id="btnBackupDB" onclick="backupDB()" title="Descarga una copia de la base de datos en la ubicación que elijas">&#128190; Guardar copia</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar-group">
+    <label>Curso</label>
+    <select id="cursoSelect" onchange="onFilterChange()">
+{{ CURSO_OPTIONS | safe }}
+    </select>
+  </div>
+  <div class="toolbar-group">
+    <label>Cuatrimestre</label>
+    <select id="cuatSelect" onchange="onFilterChange()">
+      <option value="1C">1er Cuatrimestre</option>
+      <option value="2C">2o Cuatrimestre</option>
+    </select>
+  </div>
+  <div class="toolbar-group">
+    <label>Grupo</label>
+    <select id="grupoSelect" onchange="onFilterChange()">
+      <option value="1">Grupo 1</option>
+      <option value="2">Grupo 2</option>
+    </select>
+  </div>
+  <div class="toolbar-group">
+    <label>Vista</label>
+    <div class="view-tabs">
+      <button class="tab-btn active" onclick="setView('semana',this)">Por Semana</button>
+      <button class="tab-btn" onclick="setView('stats',this)">Estadisticas</button>
+      <button class="tab-btn" onclick="setView('parciales',this)">&#128221; Parciales</button>
+      <button class="tab-btn" onclick="setView('finales',this)">&#127891; Finales</button>
+      <button class="tab-btn" onclick="setView('festivos',this)">&#128197; Festivos</button>
+    </div>
+  </div>
+  <div class="toolbar-group" style="margin-left:auto">
+    <input type="text" id="searchInput" placeholder="Buscar asignatura..." style="width:190px" oninput="render()">
+  </div>
+  <button class="btn btn-success" onclick="exportPDF()">&#128438; PDF semana</button>
+  <button class="btn btn-success" onclick="exportAllPDF()">&#128438; PDF todas las semanas</button>
+  <button class="btn btn-success" id="btnExportExcel" onclick="exportarExcel()" title="Exporta un Excel por curso con todos los grupos y cuatrimestres">&#128196; Exportar horarios {{ INSTITUTION_ACRONYM }}</button>
+  <button class="btn btn-primary" onclick="openAddModal()">+ Nueva clase</button>
+</div>
+
+<div class="main">
+  <div id="print-header">
+    <h2 id="print-title">Gestor de Horarios — {{ DEGREE_ACRONYM }} &nbsp; Curso {{ CURSO_LABEL }}</h2>
+    <p id="print-subtitle"></p>
+  </div>
+  <div id="view-semana">
+    <div class="week-nav">
+      <button class="btn btn-outline btn-sm" onclick="prevWeek()">&#9664; Anterior</button>
+      <div class="week-dots" id="weekDots"></div>
+      <button class="btn btn-outline btn-sm" onclick="nextWeek()">Siguiente &#9654;</button>
+    </div>
+    <div id="weekLabel" style="margin-bottom:14px;font-size:.95rem;color:var(--primary);font-weight:700;text-align:center"></div>
+    <div class="schedule-container" id="scheduleGrid"></div>
+    <div id="weekCumulative"></div>
+  </div>
+  <div id="view-stats" style="display:none"><div class="stats-grid" id="statsGrid"></div><div class="subjects-table" id="subjectsTable"></div><div id="evolucionSection"></div></div>
+  <div id="view-parciales" style="display:none"><div class="parc-calendar" id="parcGrid"></div></div>
+  <div id="view-finales" style="display:none"><div class="parc-calendar" id="finalesContainer"></div></div>
+  <div id="view-festivos" style="display:none">
+    <div class="cal-wrap">
+      <div class="cal-top">
+        <div>
+          <h3>&#128197; Calendario de D&iacute;as Festivos y No Lectivos</h3>
+          <p>Haz clic en un d&iacute;a lectivo para marcarlo/desmarcarlo. Los cambios se propagan autom&aacute;ticamente a <strong>todos los horarios</strong>.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadFestivos()">&#8635; Actualizar</button>
+      </div>
+      <div class="cal-legend">
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-festivo"></span> Festivo nacional</span>
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-no_lectivo"></span> No lectivo / Puente</span>
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-lectivo"></span> D&iacute;a lectivo</span>
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-finde"></span> Fin de semana</span>
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-fuera"></span> Fuera de cuatrimestre</span>
+      </div>
+      <div id="calendarGrid" class="cal-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">Editar Clase</div>
+    <div class="modal-subtitle" id="modalSubtitle"></div>
+    <div class="form-row">
+      <label class="form-label">Asignatura</label>
+      <select id="fAsignatura" class="form-control" onchange="onAsignaturaSelect()">
+        <option value="">(Vacio)</option>
+      </select>
+    </div>
+    <div class="form-row-2">
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-label">Aula</label>
+        <input type="text" id="fAula" class="form-control" placeholder="PS2, LAB-203, INFO-01..." list="fAulaList" autocomplete="off">
+        <datalist id="fAulaList"></datalist>
+      </div>
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-label">Subgrupo(s)</label>
+        <input type="text" id="fSubgrupo" class="form-control" placeholder="1, 2, 3...">
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:8px">
+      <label class="form-label">Tipo de actividad</label>
+      <select id="fTipo" class="form-control" onchange="onTipoChange()">
+        <option value="">— Sin especificar —</option>
+        <option value="AD">AD · Actividad docente presencial</option>
+        <option value="ADP">ADP · Actividad docente práctica</option>
+        <option value="ADI">ADI · Courses taught in english</option>
+        <option value="AO">AO · Actividad docente online</option>
+        <option value="INF">INF · Actividad práctica informática</option>
+        <option value="LAB">LAB · Actividad práctica laboratorio, campo, planta piloto...</option>
+        <option value="TLL">TLL · Actividad práctica en taller</option>
+        <option value="CPA">CPA · Clase práctica en el aula</option>
+        <option value="SEM">SEM · Actividad asistencia seminarios, visitas externas,...</option>
+        <option value="AE">AE · Actividad de evaluación</option>
+        <option value="AEO">AEO · Actividad de evaluación online</option>
+        <option value="EXP">EXP · Examen parcial</option>
+        <option value="EXF">EXF · Examen final</option>
+        <option value="EPyOAE">EPyOAE · Exámenes parciales y otras actividades de evaluación</option>
+        <option value="AC">AC · Actividad cultural</option>
+        <option value="AP">AP · Actividad puntual</option>
+      </select>
+    </div>
+    <div class="form-row" id="rowAfCat" style="display:none;margin-top:6px;background:#eef4ff;border-radius:7px;padding:8px 10px">
+      <label class="form-label" style="margin-bottom:6px">Contabilizar como</label>
+      <div style="display:flex;gap:20px">
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:.85rem">
+          <input type="radio" name="fAfCat" id="fAfCatAF5" value="AF5"> AF5 · Eval. continua en horario
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:.85rem">
+          <input type="radio" name="fAfCat" id="fAfCatAF6" value="AF6"> AF6 · Eval. final
+        </label>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <label class="form-label">Observacion</label>
+      <input type="text" id="fObs" class="form-control" placeholder="Parcial 1, Examen...">
+    </div>
+    <div class="form-row">
+      <label class="form-label"><input type="checkbox" id="fNoLectivo" onchange="toggleNoLectivo()"> Marcar como NO LECTIVO</label>
+    </div>
+    <div id="addFields" style="display:none">
+      <div class="form-row-2">
+        <div class="form-row" style="margin-bottom:0">
+          <label class="form-label">Dia</label>
+          <select id="fDia" class="form-control">
+            <option>LUNES</option><option>MARTES</option><option>MIÉRCOLES</option><option>JUEVES</option><option>VIERNES</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-bottom:0">
+          <label class="form-label">Franja horaria</label>
+          <select id="fHora" class="form-control"></select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <label class="form-label">Aplicar a</label>
+        <select id="fScope" class="form-control">
+          <option value="single">Solo esta semana</option>
+          <option value="all">Todas las semanas</option>
+          <option value="from">Desde esta semana en adelante</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger btn-sm" id="btnDelete" onclick="deleteSlot()" style="margin-right:auto">Eliminar</button>
+      <button class="btn btn-primary" id="btnSave" onclick="saveSlot()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="saving-indicator" id="saving">Guardando en base de datos...</div>
+<div class="pdf-progress" id="pdfOverlay">
+  <div class="pdf-progress-box">
+    <div class="pdf-progress-title">&#128438; Generando PDF&hellip;</div>
+    <div class="pdf-progress-bar-wrap"><div class="pdf-progress-bar-fill" id="pdfProgressFill" style="width:0%"></div></div>
+    <div class="pdf-progress-msg" id="pdfProgressMsg">Preparando&hellip;</div>
+  </div>
+</div>
+
+<script>
+// Constantes inyectadas por el servidor desde config.json
+const CURSO_STR           = "{{ CURSO_LABEL }}";
+const DEGREE_ACRONYM      = "{{ DEGREE_ACRONYM }}";
+const INSTITUTION_ACRONYM = "{{ INSTITUTION_ACRONYM }}";
+const EXPORT_PREFIX       = "{{ EXPORT_PREFIX }}";
+const DESTACADAS_BADGE    = "{{ DESTACADAS_BADGE }}";
+const AULAS_POR_CURSO     = {{ AULAS_POR_CURSO_JSON | safe }};
+const AULARIO_POR_CURSO   = {{ AULARIO_POR_CURSO_JSON | safe }};
+const TIPOS_ACTIVIDAD     = {{ TIPOS_ACTIVIDAD_JSON | safe }};
+const TIPO_TO_AF          = {{ TIPO_TO_AF_JSON | safe }};
+</script>
+<script src="/static/horarios.js"></script>
+
+<footer style="text-align:center;padding:14px 20px;font-size:.72rem;color:var(--text-light);border-top:1px solid var(--border);margin-top:24px;background:var(--card)">
+  &copy; <span id="footer-year"></span> Jes&uacute;s Mart&iacute;nez-Frutos &mdash; {{ DEGREE_ACRONYM }} &middot; {{ INSTITUTION_ACRONYM }}
+  <script>document.getElementById('footer-year').textContent = new Date().getFullYear();</script>
+</footer>
+</body>
+</html>
