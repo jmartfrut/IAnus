@@ -1,0 +1,14 @@
+[
+  {"code": "INF",  "label": "Actividad práctica informática",                          "af": "AF4"},
+  {"code": "LAB",  "label": "Actividad práctica laboratorio, campo, planta piloto...", "af": "AF2"},
+  {"code": "SEM",  "label": "Actividad asistencia seminarios, visitas externas,...",   "af": "AF3"},
+  {"code": "EXP",  "label": "Examen parcial",                                          "af": "AF5"},
+  {"code": "EXF",  "label": "Examen final",                                            "af": "AF6"},
+  {"code": "CPA",  "label": "Clase práctica en el aula",                               "af": "AF1"},
+  {"code": "TLL",  "label": "Actividad práctica en taller",                            "af": "AF2"},
+  {"code": "AD",   "label": "Actividad docente presencial",                            "af": "AF1"},
+  {"code": "AE",   "label": "Actividad de evaluación",                                 "af": "AF6"},
+  {"code": "AC",   "label": "Actividad cultural",                                      "af": "AF3"},
+  {"code": "AP",   "label": "Actividad puntual",                                       "af": "AF3"},
+  {"code": "ADI",  "label": "Courses taught in english",                               "af": "AF1"}
+]

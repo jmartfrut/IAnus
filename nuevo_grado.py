@@ -197,16 +197,19 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
 
   <div class="row2">
     <div class="field">
-      <label>Nombre del grado</label>
-      <input type="text" id="b-nombre" placeholder="Grado en Ingeniería Mecánica">
+      <label>Escuela</label>
+      <select id="b-escuela" onchange="onEscuelaChange()">
+        <option value="">— Selecciona una escuela —</option>
+      </select>
     </div>
     <div class="field">
-      <label>Siglas / clave del grado</label>
-      <input type="text" id="b-siglas" placeholder="GIM" maxlength="10" style="text-transform:uppercase"
-             oninput="this.value=this.value.toUpperCase().replace(/\s/g,'')">
-      <div class="hint">Se usa como nombre de la carpeta en grados/</div>
+      <label>Titulación</label>
+      <select id="b-nombre" onchange="onTitulacionChange()" disabled>
+        <option value="">— Selecciona primero una escuela —</option>
+      </select>
     </div>
   </div>
+  <input type="hidden" id="b-siglas">
   <div class="row2">
     <div class="field">
       <label>Nombre de la institución</label>
@@ -225,11 +228,6 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
     <div class="field">
       <label>Puerto del servidor</label>
       <input type="number" id="b-port" value="8080" min="1024" max="65535">
-    </div>
-    <div class="field">
-      <label>Badge "Doble Grado"</label>
-      <input type="text" id="b-badge" placeholder="ej. PCEO GIM+GIDI">
-      <div class="hint">Etiqueta informativa en la interfaz (opcional)</div>
     </div>
   </div>
 
@@ -348,8 +346,7 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
   <div class="desc">
     Cada clase tiene un campo <strong>Tipo</strong> seleccionable en la interfaz de horarios.
     El tipo determina cómo se contabiliza la actividad en las estadísticas.
-    Los tipos con fondo azul tienen categoría AF fija. Los marcados con <strong>—</strong>
-    son editables: elige en qué categoría encajan para que se contabilicen correctamente.
+    Todos los tipos tienen categoría AF fija y se contabilizan automáticamente.
   </div>
 
   <table class="af-table" style="margin-top:16px">
@@ -360,42 +357,39 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
         <th style="width:160px;text-align:center">Contabiliza como</th>
       </tr>
     </thead>
-    <tbody>
-      <tr style="background:#eef4ff"><td><strong>INF</strong></td><td>Actividad práctica informática</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF4</td></tr>
-      <tr style="background:#eef4ff"><td><strong>LAB</strong></td><td>Actividad práctica laboratorio, campo, planta piloto...</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF2</td></tr>
-      <tr style="background:#eef4ff"><td><strong>SEM</strong></td><td>Actividad asistencia seminarios, visitas externas,...</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF3</td></tr>
-      <tr style="background:#eef4ff"><td><strong>EXP</strong></td><td>Examen parcial</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF5</td></tr>
-      <tr style="background:#eef4ff"><td><strong>EXF</strong></td><td>Examen final</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF6</td></tr>
-      <tr style="background:#eef4ff"><td><strong>CPA</strong></td><td>Clase práctica en el aula</td><td style="text-align:center;font-weight:600;color:#1a3a6b">AF1</td></tr>
-      <tr><td><strong>TLL</strong></td><td>Actividad práctica en taller</td><td class="tipo-af-cell" data-code="TLL"></td></tr>
-      <tr><td><strong>AD</strong></td><td>Actividad docente presencial</td><td class="tipo-af-cell" data-code="AD"></td></tr>
-      <tr><td><strong>AE</strong></td><td>Actividad de evaluación</td><td class="tipo-af-cell" data-code="AE"></td></tr>
-      <tr><td><strong>AC</strong></td><td>Actividad cultural</td><td class="tipo-af-cell" data-code="AC"></td></tr>
-      <tr><td><strong>AP</strong></td><td>Actividad puntual</td><td class="tipo-af-cell" data-code="AP"></td></tr>
-      <tr><td><strong>ADI</strong></td><td>Courses taught in english</td><td class="tipo-af-cell" data-code="ADI"></td></tr>
-      <tr><td><strong>ADP</strong></td><td>Actividad docente práctica</td><td class="tipo-af-cell" data-code="ADP"></td></tr>
-      <tr><td><strong>AO</strong></td><td>Actividad docente online</td><td class="tipo-af-cell" data-code="AO"></td></tr>
-      <tr><td><strong>EPyOAE</strong></td><td>Exámenes parciales y otras actividades de evaluación</td><td class="tipo-af-cell" data-code="EPyOAE"></td></tr>
-      <tr><td><strong>AEO</strong></td><td>Actividad de evaluación online</td><td class="tipo-af-cell" data-code="AEO"></td></tr>
+    <tbody id="tipos-actividad-tbody">
+      <tr><td colspan="3" style="color:#8a9ab0;text-align:center;padding:12px">Cargando tipos...</td></tr>
     </tbody>
   </table>
   <script>
+  var _tiposActividadCache = null;
   (function(){
-    const OPT = '<option value="">— no cuenta</option>'
-      + '<option value="AF1">AF1 · Teoría/Presencial</option>'
-      + '<option value="AF2">AF2 · Laboratorio</option>'
-      + '<option value="AF4">AF4 · Informática</option>'
-      + '<option value="AF5">AF5 · Eval. continua</option>'
-      + '<option value="AF6">AF6 · Eval. final</option>';
-    document.querySelectorAll('.tipo-af-cell').forEach(td => {
-      const code = td.dataset.code;
-      td.innerHTML = '<select id="tipo-af-' + code + '" style="width:100%">' + OPT + '</select>';
-    });
+    fetch('/api/tipos_actividad')
+      .then(r => r.json())
+      .then(tipos => {
+        _tiposActividadCache = tipos;
+        const tbody = document.getElementById('tipos-actividad-tbody');
+        if (!tipos.length) {
+          tbody.innerHTML = '<tr><td colspan="3" style="color:#ef4444;text-align:center">No se encontró tipos_actividad.json</td></tr>';
+          return;
+        }
+        tbody.innerHTML = tipos.map(t =>
+          `<tr style="background:#eef4ff">
+            <td><strong>${t.code}</strong></td>
+            <td>${t.label}</td>
+            <td style="text-align:center;font-weight:600;color:#1a3a6b">${t.af}</td>
+          </tr>`
+        ).join('');
+      })
+      .catch(() => {
+        document.getElementById('tipos-actividad-tbody').innerHTML =
+          '<tr><td colspan="3" style="color:#ef4444;text-align:center">Error al cargar tipos_actividad.json</td></tr>';
+      });
   })();
   </script>
   <div class="hint" style="margin-top:10px">
     El tipo de cada clase se asigna manualmente en la interfaz de horarios.
-    Los tipos con categoría fija (fondo azul) se contabilizan automáticamente. Los editables solo cuentan si les asignas una categoría AF.
+    Para añadir o modificar tipos, edita el fichero <strong>tipos_actividad.json</strong> en la carpeta raíz del proyecto.
   </div>
 
   <!-- Campos ocultos para compatibilidad con config.json (AF1/AF2/AF4 base) -->
@@ -472,8 +466,8 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
   </div>
 
   <div class="hint" style="margin-bottom:8px">
-    Formato CSV: <code>codigo,nombre,curso,cuatrimestre,creditos,af1,af2,af4,af5,af6</code>
-    (af5 y af6 son opcionales, defecto 0)
+    Formato CSV: <code>codigo,nombre,curso,cuatrimestre,creditos,af1,af2,af3,af4,af5,af6</code>
+    (af3, af5 y af6 son opcionales, defecto 0)
   </div>
 
   <div class="tbl-wrap">
@@ -481,7 +475,7 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
       <thead>
         <tr>
           <th>Código</th><th>Nombre</th><th>Curso</th><th>Cuat.</th>
-          <th>Créd.</th><th>AF1</th><th>AF2</th><th>AF4</th><th>AF5</th><th>AF6</th><th></th>
+          <th>Créd.</th><th>AF1</th><th>AF2</th><th>AF3</th><th>AF4</th><th>AF5</th><th>AF6</th><th></th>
         </tr>
       </thead>
       <tbody id="asig-tbody"></tbody>
@@ -561,6 +555,78 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let asignaturas = [];
 let currentStep = 1;
+let _titulacionesCache = [];
+let _classroomsCache = [];   // aulas cargadas desde VAILLO/classrooms.json
+let _escuelaActual = '';     // escuela seleccionada en paso 1
+
+// Carga aulas desde classrooms.json al iniciar; si ya estamos en paso 2, re-renderiza la tabla
+(function() {
+  fetch('/api/classrooms')
+    .then(r => r.json())
+    .then(data => {
+      _classroomsCache = data || [];
+      if (currentStep === 2) renderCursoTable();
+    })
+    .catch(() => console.warn('No se pudo cargar classrooms.json'));
+})();
+
+// Carga titulaciones desde titulaciones.json al iniciar
+(function() {
+  fetch('/api/titulaciones')
+    .then(r => r.json())
+    .then(tits => {
+      _titulacionesCache = tits;
+      // Poblar escuelas con valores únicos manteniendo el orden de aparición
+      const escuelas = [...new Set(tits.map(t => t.escuela))];
+      const selEsc = document.getElementById('b-escuela');
+      if (!selEsc) return;
+      escuelas.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e;
+        opt.textContent = e;
+        selEsc.appendChild(opt);
+      });
+      // Si solo hay una escuela, seleccionarla automáticamente y cargar titulaciones
+      if (escuelas.length === 1) {
+        selEsc.value = escuelas[0];
+        onEscuelaChange();
+      }
+    })
+    .catch(() => console.warn('No se pudo cargar titulaciones.json'));
+})();
+
+function onEscuelaChange() {
+  const escuela = document.getElementById('b-escuela').value;
+  _escuelaActual = escuela;
+  const selTit = document.getElementById('b-nombre');
+  // Limpiar titulaciones y siglas
+  selTit.innerHTML = '';
+  document.getElementById('b-siglas').value = '';
+  if (!escuela) {
+    selTit.innerHTML = '<option value="">— Selecciona primero una escuela —</option>';
+    selTit.disabled = true;
+    return;
+  }
+  // Si ya estamos en el paso 2, re-renderizar la tabla de cursos con las nuevas aulas
+  if (currentStep === 2) renderCursoTable();
+  // Filtrar titulaciones por escuela seleccionada y excluir dobles grados
+  const filtradas = _titulacionesCache.filter(t => t.escuela === escuela && !t.doble_grado);
+  selTit.innerHTML = '<option value="">— Selecciona una titulación —</option>';
+  filtradas.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.titulacion;
+    opt.dataset.code = t.code;
+    opt.textContent = t.code + ' · ' + t.titulacion;
+    selTit.appendChild(opt);
+  });
+  selTit.disabled = false;
+}
+
+function onTitulacionChange() {
+  const sel = document.getElementById('b-nombre');
+  const opt = sel && sel.options[sel.selectedIndex];
+  document.getElementById('b-siglas').value = (opt && opt.dataset.code) ? opt.dataset.code : '';
+}
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
 function goStep(n) {
@@ -586,11 +652,10 @@ function updateStepper() {
 
 function validateStep(n) {
   if (n === 1) {
-    const siglas = gv('b-siglas').trim();
     const nombre = gv('b-nombre').trim();
-    if (!nombre) { alert('Introduce el nombre del grado.'); return false; }
-    if (!siglas)  { alert('Introduce las siglas del grado (clave de carpeta).'); return false; }
-    if (!/^[A-Z0-9_-]+$/.test(siglas)) { alert('Las siglas solo pueden contener letras mayúsculas, números, guiones y subrayados.'); return false; }
+    const siglas = gv('b-siglas').trim();
+    if (!nombre) { alert('Selecciona una titulación.'); return false; }
+    if (!siglas)  { alert('No se pudo obtener la clave del grado. Selecciona una titulación válida.'); return false; }
   }
   if (n === 2) {
     const rows = getFranjas();
@@ -609,6 +674,23 @@ function gv(id) { return (document.getElementById(id)||{value:''}).value || ''; 
 function sv(id, val) { const el = document.getElementById(id); if(el) el.value = val; }
 
 // ─── STEP 2: CURSOS / FRANJAS ─────────────────────────────────────────────
+function buildAularioOptions(selectedVal) {
+  // Construye las <option> del desplegable de aula filtradas por escuela
+  const escuela = _escuelaActual || document.getElementById('b-escuela').value;
+  const aulas = _classroomsCache.filter(c => (!escuela || c.ESCUELA === escuela) && c.ClassroomCode);
+  let html = '<option value="">— Sin aula por defecto —</option>';
+  aulas.forEach(c => {
+    const cap = c.ClassroomCapacity ? ` [${c.ClassroomCapacity}]` : '';
+    const sel = (c.ClassroomCode === selectedVal) ? ' selected' : '';
+    html += `<option value="${c.ClassroomCode}"${sel}>${c.ClassroomCode}${cap}</option>`;
+  });
+  // Si el valor guardado no está en la lista, añadirlo como opción extra
+  if (selectedVal && !aulas.find(c => c.ClassroomCode === selectedVal)) {
+    html += `<option value="${selectedVal}" selected>${selectedVal}</option>`;
+  }
+  return html;
+}
+
 function renderCursoTable() {
   const n = parseInt(gv('e-num-cursos')) || 4;
   const tbody = document.getElementById('cursos-tbody');
@@ -629,7 +711,7 @@ function renderCursoTable() {
     tr.innerHTML = `<td><strong>${i+1}º</strong></td>
       <td><input type="number" class="g1c" value="${g1c}" min="1" max="10" style="width:80px"></td>
       <td><input type="number" class="g2c" value="${g2c}" min="1" max="10" style="width:80px"></td>
-      <td><input type="text" class="aulario" value="${aulario}" placeholder="ej. PS2" style="width:80px"></td>`;
+      <td><select class="aulario" style="min-width:160px">${buildAularioOptions(aulario)}</select></td>`;
     tbody.appendChild(tr);
   }
 }
@@ -853,6 +935,7 @@ function renderAsigTable() {
       <td><input type="number" value="${a.creditos||6}" min="0" step="0.5" oninput="asignaturas[${i}].creditos=+this.value" style="width:55px"></td>
       <td><input type="number" value="${a.af1||0}" min="0" oninput="asignaturas[${i}].af1=+this.value" style="width:50px"></td>
       <td><input type="number" value="${a.af2||0}" min="0" oninput="asignaturas[${i}].af2=+this.value" style="width:50px"></td>
+      <td><input type="number" value="${a.af3||0}" min="0" oninput="asignaturas[${i}].af3=+this.value" style="width:50px"></td>
       <td><input type="number" value="${a.af4||0}" min="0" oninput="asignaturas[${i}].af4=+this.value" style="width:50px"></td>
       <td><input type="number" value="${a.af5||0}" min="0" oninput="asignaturas[${i}].af5=+this.value" style="width:50px"></td>
       <td><input type="number" value="${a.af6||0}" min="0" oninput="asignaturas[${i}].af6=+this.value" style="width:50px"></td>
@@ -864,7 +947,7 @@ function esc(s) { return String(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;
 
 function addAsigRow() {
   const nc = parseInt(gv('e-num-cursos')) || 4;
-  asignaturas.push({codigo:'',nombre:'',curso:1,cuatrimestre:'1C',creditos:6,af1:45,af2:0,af4:0,af5:0,af6:0});
+  asignaturas.push({codigo:'',nombre:'',curso:1,cuatrimestre:'1C',creditos:6,af1:45,af2:0,af3:0,af4:0,af5:0,af6:0});
   renderAsigTable();
 }
 
@@ -910,9 +993,10 @@ function parseCSV(text) {
       creditos:     parseFloat(cols[4]) || 6,
       af1:          parseFloat(cols[5]) || 0,
       af2:          parseFloat(cols[6]) || 0,
-      af4:          parseFloat(cols[7]) || 0,
-      af5:          parseFloat(cols[8]) || 0,
-      af6:          parseFloat(cols[9]) || 0
+      af3:          parseFloat(cols[7]) || 0,
+      af4:          parseFloat(cols[8]) || 0,
+      af5:          parseFloat(cols[9]) || 0,
+      af6:          parseFloat(cols[10]) || 0
     });
   });
   if (imported.length) {
@@ -955,7 +1039,7 @@ function getBasico() {
     siglas_inst: gv('b-inst-siglas'),
     curso_label: gv('b-curso-label'),
     puerto: gv('b-port') || '8080',
-    badge: gv('b-badge')
+    badge: ''
   };
 }
 
@@ -972,11 +1056,11 @@ function getEstructura() {
 }
 
 function getActividades() {
-  const EDITABLE_TIPOS = ['TLL','AD','AE','AC','AP','ADI','ADP','AO','EPyOAE','AEO'];
+  // tipoToAf se construye a partir de tipos_actividad.json vía API.
+  // Se usa _tiposActividadCache, poblada al cargar el paso 4.
   const tipoToAf = {};
-  EDITABLE_TIPOS.forEach(code => {
-    const sel = document.getElementById('tipo-af-' + code);
-    if (sel && sel.value) tipoToAf[code] = sel.value;
+  (_tiposActividadCache || []).forEach(t => {
+    if (t.af && t.af !== '-') tipoToAf[t.code] = t.af;
   });
   return {
     AF1: { label: gv('af1-label'), aula_exact: gv('af1-exact'), aula_startswith: gv('af1-starts') },
@@ -1284,7 +1368,7 @@ def build_config(data):
         'activity_types': activity_types,
         'tipo_to_af': tipo_to_af,
         'ui': {
-            'destacadas_badge': b.get('badge', ''),
+            'destacadas_badge': "DTIE",
             'export_prefix':    siglas
         }
     }
@@ -1293,7 +1377,7 @@ def build_config(data):
 
 def write_csv(asignaturas, path):
     fields = ['codigo', 'nombre', 'curso', 'cuatrimestre',
-              'creditos', 'af1', 'af2', 'af4', 'af5', 'af6']
+              'creditos', 'af1', 'af2', 'af3', 'af4', 'af5', 'af6']
     with open(path, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -1490,20 +1574,20 @@ def api_crear(data):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PCEO — importar funciones desde nuevo_pceo.py
+# DTIE — importar funciones desde nuevo_dtie.py
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
-    from nuevo_pceo import (
-        WIZARD_HTML as PCEO_HTML,
-        api_grados       as pceo_api_grados,
-        api_leer_pceo    as pceo_api_leer_pceo,
-        api_crear_pceo   as pceo_api_crear_pceo,
+    from nuevo_dtie import (
+        WIZARD_HTML as DTIE_HTML,
+        api_grados       as dtie_api_grados,
+        api_leer_dtie    as dtie_api_leer_dtie,
+        api_crear_dtie   as dtie_api_crear_dtie,
     )
-    _PCEO_AVAILABLE = True
+    _DTIE_AVAILABLE = True
 except ImportError:
-    _PCEO_AVAILABLE = False
-    PCEO_HTML = '<h1>nuevo_pceo.py no encontrado</h1>'
+    _DTIE_AVAILABLE = False
+    DTIE_HTML = '<h1>nuevo_dtie.py no encontrado</h1>'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LANDING PAGE
@@ -1531,7 +1615,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
       border:2.5px solid transparent;transition:all .2s;cursor:pointer;text-decoration:none;color:inherit}
 .card:hover{transform:translateY(-4px);box-shadow:0 8px 30px rgba(0,0,0,.13)}
 .card-grado:hover{border-color:#1a3a6b}
-.card-pceo:hover{border-color:#6b1a3a}
+.card-dtie:hover{border-color:#6b1a3a}
 .card-icon{font-size:3rem;margin-bottom:16px;line-height:1}
 .card h2{font-size:1.15rem;font-weight:700;margin-bottom:8px}
 .card p{font-size:.84rem;color:#6a7a8a;line-height:1.55;margin-bottom:20px;flex:1}
@@ -1539,8 +1623,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
           border:none;cursor:pointer;transition:background .15s;width:100%}
 .card-grado .card-btn{background:#1a3a6b;color:#fff}
 .card-grado .card-btn:hover{background:#2855a0}
-.card-pceo .card-btn{background:#6b1a3a;color:#fff}
-.card-pceo .card-btn:hover{background:#8b2a52}
+.card-dtie .card-btn{background:#6b1a3a;color:#fff}
+.card-dtie .card-btn:hover{background:#8b2a52}
 .footer{text-align:center;padding:16px;font-size:.76rem;color:#a0aab4}
 @media(max-width:560px){.cards{flex-direction:column;align-items:center}.card{max-width:100%}}
 </style>
@@ -1565,11 +1649,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
       <button class="card-btn" onclick="event.preventDefault();location.href='/nuevo'">Nuevo Grado →</button>
     </a>
 
-    <a class="card card-pceo" href="/pceo">
+    <a class="card card-dtie" href="/dtie">
       <div class="card-icon">⭐</div>
       <h2>Configurar Doble Grado</h2>
-      <p>Genera un Programa de Estudios Conjunto (PCEO) combinando asignaturas marcadas con ⭐ en dos grados ya existentes.</p>
-      <button class="card-btn" onclick="event.preventDefault();location.href='/pceo'">Nuevo Doble Grado →</button>
+      <p>Genera un Programa de Estudios Conjunto (DTIE) combinando asignaturas marcadas con ⭐ en dos grados ya existentes.</p>
+      <button class="card-btn" onclick="event.preventDefault();location.href='/dtie'">Nuevo Doble Grado →</button>
     </a>
 
   </div>
@@ -1592,14 +1676,35 @@ class WizardHandler(BaseHTTPRequestHandler):
             self._html(LANDING_HTML)
         elif self.path == '/nuevo':
             self._html(WIZARD_HTML)
-        elif self.path == '/pceo':
-            self._html(PCEO_HTML)
+        elif self.path == '/dtie':
+            self._html(DTIE_HTML)
         elif self.path == '/api/ping':
             self._json({'ok': True})
         elif self.path == '/api/logo_svg':
             self._svg(BASE_DIR / 'docs' / 'logo_janux.svg')
         elif self.path == '/api/grados':
-            self._json(pceo_api_grados() if _PCEO_AVAILABLE else {'grados': []})
+            self._json(dtie_api_grados() if _DTIE_AVAILABLE else {'grados': []})
+        elif self.path == '/api/tipos_actividad':
+            tipos_path = BASE_DIR / 'tipos_actividad.json'
+            if tipos_path.exists():
+                with open(tipos_path, encoding='utf-8') as f:
+                    self._json(json.load(f))
+            else:
+                self._json([])
+        elif self.path == '/api/titulaciones':
+            tit_path = BASE_DIR / 'titulaciones.json'
+            if tit_path.exists():
+                with open(tit_path, encoding='utf-8') as f:
+                    self._json(json.load(f))
+            else:
+                self._json([])
+        elif self.path == '/api/classrooms':
+            classrooms_path = BASE_DIR / 'classrooms.json'
+            if classrooms_path.exists():
+                with open(classrooms_path, encoding='utf-8') as f:
+                    self._json(json.load(f))
+            else:
+                self._json([])
         else:
             self._404()
 
@@ -1610,12 +1715,12 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/parse_excel':
             data = self._read_json()
             self._json(api_parse_excel(data))
-        elif self.path == '/api/leer_pceo' and _PCEO_AVAILABLE:
+        elif self.path == '/api/leer_dtie' and _DTIE_AVAILABLE:
             data = self._read_json()
-            self._json(pceo_api_leer_pceo(data))
-        elif self.path == '/api/crear_pceo' and _PCEO_AVAILABLE:
+            self._json(dtie_api_leer_dtie(data))
+        elif self.path == '/api/crear_dtie' and _DTIE_AVAILABLE:
             data = self._read_json()
-            self._json(pceo_api_crear_pceo(data))
+            self._json(dtie_api_crear_dtie(data))
         else:
             self._404()
 

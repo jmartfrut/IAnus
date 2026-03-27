@@ -57,7 +57,7 @@ DB_NAME    = _cfg("server", "db_name",      default="horarios.db")
 DB_PATH    = (os.environ.get("DB_PATH")
               or os.environ.get("DB_PATH_OVERRIDE")
               or os.path.join(SCRIPT_DIR, DB_NAME))
-CURSO_LABEL = os.environ.get("CURSO_LABEL") or _cfg("server", "curso_label", default="2025-2026")
+CURSO_LABEL = os.environ.get("CURSO_LABEL") or _cfg("server", "curso_label", default="2026-2027")
 
 # Branding (colores CSS)
 COLOR_PRIMARY       = _cfg("branding", "primary",       default="#1a3a6b")
@@ -66,7 +66,7 @@ COLOR_ACCENT        = _cfg("branding", "accent",        default="#e8a020")
 COLOR_BG            = _cfg("branding", "bg",            default="#f0f4f8")
 
 # UI
-DESTACADAS_BADGE = _cfg("ui", "destacadas_badge", default=f"PCEO {DEGREE_ACRONYM}")
+DESTACADAS_BADGE = _cfg("ui", "destacadas_badge", default=f"DTIE {DEGREE_ACRONYM}")
 EXPORT_PREFIX    = _cfg("ui", "export_prefix",    default=DEGREE_ACRONYM)
 
 # Aulas por curso (para datalist en fAula — se inyectan como JSON)
@@ -104,26 +104,15 @@ ACTIVITY_TYPES = {k: v for k, v in _raw_at.items() if not k.startswith("_")} or 
 # Mapeo personalizado tipo → AF para tipos editables (config.json: "tipo_to_af")
 TIPO_TO_AF = _cfg("tipo_to_af", default={})
 
-# Tipos de clase predefinidos (campo tipo separado del aula) — del Excel de referencia
-# Orden: primero los más comunes en docencia
-TIPOS_ACTIVIDAD = [
-    {"code": "AD",      "label": "Actividad docente presencial"},
-    {"code": "ADP",     "label": "Actividad docente práctica"},
-    {"code": "ADI",     "label": "Courses taught in english"},
-    {"code": "AO",      "label": "Actividad docente online"},
-    {"code": "INF",     "label": "Actividad práctica informática"},
-    {"code": "LAB",     "label": "Actividad práctica laboratorio, campo, planta piloto..."},
-    {"code": "TLL",     "label": "Actividad práctica en taller"},
-    {"code": "CPA",     "label": "Clase práctica en el aula"},
-    {"code": "SEM",     "label": "Actividad asistencia seminarios, visitas externas,..."},
-    {"code": "AE",      "label": "Actividad de evaluación"},
-    {"code": "AEO",     "label": "Actividad de evaluación online"},
-    {"code": "EXP",     "label": "Examen parcial"},
-    {"code": "EXF",     "label": "Examen final"},
-    {"code": "EPyOAE",  "label": "Exámenes parciales y otras actividades de evaluación"},
-    {"code": "AC",      "label": "Actividad cultural"},
-    {"code": "AP",      "label": "Actividad puntual"},
-]
+# Tipos de clase predefinidos — se leen de tipos_actividad.json (fuente única compartida
+# con nuevo_grado.py). Si el fichero no existe, se usa la lista vacía como fallback seguro.
+_tipos_path = os.path.join(SCRIPT_DIR, "tipos_actividad.json")
+if os.path.exists(_tipos_path):
+    with open(_tipos_path, encoding="utf-8") as _tf:
+        TIPOS_ACTIVIDAD = json.load(_tf)
+else:
+    TIPOS_ACTIVIDAD = []
+    print(f"AVISO: No se encuentra {_tipos_path} — el desplegable de tipos de actividad estará vacío.")
 
 def init_db_paths():
     """Verify DB exists in script directory"""
@@ -231,15 +220,15 @@ def api_get_all(params):
 
     # Fichas desde la BD (tabla fichas, joineada con asignaturas)
     fichas_rows = conn.execute("""
-        SELECT a.codigo, f.creditos, f.af1, f.af2, f.af4, f.af5, f.af6
+        SELECT a.codigo, f.creditos, f.af1, f.af2, f.af3, f.af4, f.af5, f.af6
         FROM fichas f
         JOIN asignaturas a ON a.id = f.asignatura_id
     """).fetchall()
     fichas_by_codigo = {
         r["codigo"]: {
             "creditos": r["creditos"],
-            "af1": r["af1"], "af2": r["af2"], "af4": r["af4"],
-            "af5": r["af5"], "af6": r["af6"],
+            "af1": r["af1"], "af2": r["af2"], "af3": r["af3"],
+            "af4": r["af4"], "af5": r["af5"], "af6": r["af6"],
         }
         for r in fichas_rows
     }
@@ -444,6 +433,17 @@ def ensure_af_cat_column():
         conn.execute("ALTER TABLE clases ADD COLUMN af_cat TEXT DEFAULT NULL")
         conn.commit()
         print("  ✅ Columna 'af_cat' añadida a tabla clases (NULL = AF5 para EXP).")
+    conn.close()
+
+
+def ensure_af3_fichas_column():
+    """Añade la columna af3 a la tabla fichas si no existe (migración de BDs antiguas)."""
+    conn = get_db()
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(fichas)").fetchall()}
+    if "af3" not in cols:
+        conn.execute("ALTER TABLE fichas ADD COLUMN af3 INTEGER DEFAULT 0")
+        conn.commit()
+        print("  ✅ Columna 'af3' añadida a tabla fichas.")
     conn.close()
 
 
@@ -1004,6 +1004,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             self.serve_logo_svg()
         elif parsed.path == "/api/db/download":
             self.serve_db_download()
+        elif parsed.path == "/api/classrooms":
+            self.serve_classrooms()
         elif parsed.path in API_ROUTES and API_ROUTES[parsed.path][0] == "GET":
             params = parse_qs(parsed.query)
             result = API_ROUTES[parsed.path][1](params)
@@ -1052,6 +1054,16 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             import traceback
             self.send_json({"error": str(e), "trace": traceback.format_exc()}, 500)
+
+    def serve_classrooms(self):
+        """GET /api/classrooms — devuelve classrooms.json como lista de aulas."""
+        classrooms_path = os.path.join(SCRIPT_DIR, "classrooms.json")
+        if os.path.exists(classrooms_path):
+            with open(classrooms_path, encoding="utf-8") as f:
+                data = json.load(f)
+            self.send_json(data)
+        else:
+            self.send_json([])
 
     def serve_logo(self):
         """GET /api/logo — devuelve el logo de la institución como PNG (genera si no existe desde PDF)."""
@@ -1302,6 +1314,7 @@ if __name__ == "__main__":
     init_db_paths()
     ensure_tipo_column_clases()
     ensure_af_cat_column()
+    ensure_af3_fichas_column()
     ensure_override_table()
     ensure_festivos_table()
     ensure_finales_table()

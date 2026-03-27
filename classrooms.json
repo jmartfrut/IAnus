@@ -1,0 +1,233 @@
+[
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#Aula_Temp",
+    "ClassroomCode": "ETSII#Aula_Temp",
+    "ClassroomCapacity": 100,
+    "ClassroomCapacityExam": 50
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#Industria 4.0",
+    "ClassroomCode": "ETSII#Industria 4.0",
+    "ClassroomCapacity": 50,
+    "ClassroomCapacityExam": 25
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#LAB_INSTRU",
+    "ClassroomCode": "ETSII#LAB_INSTRU",
+    "ClassroomCapacity": 20,
+    "ClassroomCapacityExam": 10
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#Laboratorio_Fisica_Aplicada_1112",
+    "ClassroomCode": "",
+    "ClassroomCapacity": 22,
+    "ClassroomCapacityExam": null
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.1",
+    "ClassroomCode": "P1.1",
+    "ClassroomCapacity": 56,
+    "ClassroomCapacityExam": 28
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.2",
+    "ClassroomCode": "P1.2",
+    "ClassroomCapacity": 40,
+    "ClassroomCapacityExam": 20
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.3",
+    "ClassroomCode": "P1.3",
+    "ClassroomCapacity": 40,
+    "ClassroomCapacityExam": 20
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.4",
+    "ClassroomCode": "P1.4",
+    "ClassroomCapacity": 35,
+    "ClassroomCapacityExam": 15
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.5",
+    "ClassroomCode": "P1.5",
+    "ClassroomCapacity": 57,
+    "ClassroomCapacityExam": 20
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.6",
+    "ClassroomCode": "P1.6",
+    "ClassroomCapacity": 21,
+    "ClassroomCapacityExam": 12
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.7",
+    "ClassroomCode": "P1.7",
+    "ClassroomCapacity": 42,
+    "ClassroomCapacityExam": 21
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.8",
+    "ClassroomCode": "P1.8",
+    "ClassroomCapacity": 35,
+    "ClassroomCapacityExam": 14
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#P1.9",
+    "ClassroomCode": "P1.9",
+    "ClassroomCapacity": 44,
+    "ClassroomCapacityExam": 22
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PB1",
+    "ClassroomCode": "PB1",
+    "ClassroomCapacity": 45,
+    "ClassroomCapacityExam": 21
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PB2",
+    "ClassroomCode": "PB2",
+    "ClassroomCapacity": 35,
+    "ClassroomCapacityExam": 21
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PB3",
+    "ClassroomCode": "PB3",
+    "ClassroomCapacity": 70,
+    "ClassroomCapacityExam": 38
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PB4",
+    "ClassroomCode": "PB4",
+    "ClassroomCapacity": 104,
+    "ClassroomCapacityExam": 52
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PB5",
+    "ClassroomCode": "PB5",
+    "ClassroomCapacity": 113,
+    "ClassroomCapacityExam": 56
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS1",
+    "ClassroomCode": "PS1",
+    "ClassroomCapacity": 196,
+    "ClassroomCapacityExam": 108
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS10",
+    "ClassroomCode": "PS10",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS11",
+    "ClassroomCode": "PS11",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS12",
+    "ClassroomCode": "PS12",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS13",
+    "ClassroomCode": "PS13",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS14",
+    "ClassroomCode": "PS14",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS15",
+    "ClassroomCode": "PS15",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS2",
+    "ClassroomCode": "PS2",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS3",
+    "ClassroomCode": "PS3",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS4",
+    "ClassroomCode": "PS4",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS5",
+    "ClassroomCode": "PS5",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS6",
+    "ClassroomCode": "PS6",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS7",
+    "ClassroomCode": "PS7",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS8",
+    "ClassroomCode": "PS8",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  },
+  {
+    "ESCUELA": "ETSII",
+    "ClassroomName": "ETSII#PS9",
+    "ClassroomCode": "PS9",
+    "ClassroomCapacity": 108,
+    "ClassroomCapacityExam": 63
+  }
+]

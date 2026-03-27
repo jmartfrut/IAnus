@@ -1,6 +1,7 @@
 let DB = null;
 let currentCurso = '1', currentCuat = '1C', currentGroup = '1', currentWeekIdx = 0, currentView = 'semana';
 let editCtx = null;
+let _classroomsAll = [];   // aulas cargadas desde /api/classrooms
 const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
 const COLORS = ['color-0','color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12','color-13','color-14'];
 
@@ -275,9 +276,9 @@ function buildSubjectCard(cls, color, search, interactive) {
   const onclick = interactive ? ` onclick="openEdit(${cls.id})"` : '';
   const _actType = getActType(cls);
   const _sg = cls.subgrupo || '';
-  const pceoBtnHtml = (!parcial && interactive && cls.asig_codigo) ? `<button class="pceo-btn${destacada?' active':''}" onclick="event.stopPropagation();togglePceo('${cls.asig_codigo}',currentGroup,'${_actType}','${_sg}')" title="${destacada?'Quitar PCEO':'Marcar como PCEO'}">&#11088;</button>` : '';
+  const dtieBtnHtml = (!parcial && interactive && cls.asig_codigo) ? `<button class="dtie-btn${destacada?' active':''}" onclick="event.stopPropagation();toggleDtie('${cls.asig_codigo}',currentGroup,'${_actType}','${_sg}')" title="${destacada?'Quitar DTIE':'Marcar como DTIE'}">&#11088;</button>` : '';
   return `<div class="subject-card ${cardColor}${match?' search-highlight':''}"${onclick} style="cursor:${interactive?'pointer':'default'}">
-    ${pceoBtnHtml}
+    ${dtieBtnHtml}
     ${parcial ? `<span class="parcial-badge">&#128221; ${cls.tipo === 'EXF' ? 'EXAMEN FINAL' : 'EXAMEN PARCIAL'}${cls.observacion ? ' &middot; '+cls.observacion : ''}</span>` : ''}
     ${destacada ? `<span class="parcial-badge" style="color:#ffffff;background:rgba(255,255,255,.15);font-size:.6rem">&#11088; ${DESTACADAS_BADGE}</span>` : ''}
     <div class="subject-name">${cls.asig_nombre||cls.contenido||''}</div>
@@ -290,7 +291,7 @@ function buildSubjectCard(cls, color, search, interactive) {
   </div>`;
 }
 
-async function togglePceo(codigo, grupo_num, act_type, subgrupo) {
+async function toggleDtie(codigo, grupo_num, act_type, subgrupo) {
   const res = await api('/api/destacada/toggle', {codigo, grupo_num, act_type, subgrupo});
   if (res.ok) {
     const key = codigo + '::' + grupo_num + '::' + act_type + '::' + subgrupo;
@@ -393,13 +394,14 @@ function buildCumulativePanel() {
 
   // Reutilizamos computeGroupStats con las semanas acumuladas hasta ahora
   const asigs = computeGroupStats(weeksUpTo).filter(a =>
-    a.counts.teoria > 0 || a.counts.ps > 0 || a.counts.parcial > 0 ||
+    a.counts.teoria > 0 || a.counts.af3 > 0 || a.counts.ps > 0 || a.counts.parcial > 0 ||
     Object.keys(a.infoBySubgrupo).length > 0 || Object.keys(a.labBySubgrupo).length > 0
   );
   if (!asigs.length) return '';
 
   const ACT_META = {
     teoria:  { label: '&#128218; Teor&iacute;a',     thCls: 'act-teoria-th', tdCls: 'act-teoria-td' },
+    af3:     { label: '&#128203; Aula Espec. <small style="font-size:.7em">AF3</small>', thCls: 'act-ps-th', tdCls: 'act-ps-td' },
     info:    { label: '&#128187; Inform&aacute;t.',   thCls: 'act-info-th',   tdCls: 'act-info-td'   },
     lab:     { label: '&#128300; Lab.',               thCls: 'act-lab-th',    tdCls: 'act-lab-td'    },
     ps:      { label: '&#127981; Aula Esp.',          thCls: 'act-ps-th',     tdCls: 'act-ps-td'     },
@@ -407,6 +409,7 @@ function buildCumulativePanel() {
   };
 
   const hasTeoria  = asigs.some(a => a.counts.teoria  > 0);
+  const hasAf3     = asigs.some(a => a.counts.af3     > 0);
   const hasInfo    = asigs.some(a => Object.keys(a.infoBySubgrupo).length > 0);
   const hasLab     = asigs.some(a => Object.keys(a.labBySubgrupo).length  > 0);
   const hasPs      = asigs.some(a => a.counts.ps      > 0);
@@ -414,6 +417,7 @@ function buildCumulativePanel() {
 
   const cols = [];
   if (hasTeoria)  cols.push('teoria');
+  if (hasAf3)     cols.push('af3');
   if (hasInfo)    cols.push('info');
   if (hasLab)     cols.push('lab');
   if (hasPs)      cols.push('ps');
@@ -438,7 +442,7 @@ function buildCumulativePanel() {
   asigs.forEach(a => {
     const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
     const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
-    grandTotal += (a.counts.teoria + a.counts.ps + maxInfo + maxLab) * 2;
+    grandTotal += (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
   });
 
   const pct = Math.round(((upTo + 1) / total) * 100);
@@ -452,7 +456,7 @@ function buildCumulativePanel() {
   const tbody = asigs.map(a => {
     const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
     const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
-    const acumH = (a.counts.teoria + a.counts.ps + maxInfo + maxLab) * 2;
+    const acumH = (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
     const cells = cols.map(t => {
       if (t === 'info')    return sgCell(a.infoBySubgrupo, ACT_META.info.tdCls);
       if (t === 'lab')     return sgCell(a.labBySubgrupo,  ACT_META.lab.tdCls);
@@ -545,14 +549,16 @@ function getActType(cls) {
   if (t === 'INF') return 'info';
   if (t === 'EXF') return 'parcial6';                        // Examen final → siempre AF6
   if (t === 'EXP') return cls.af_cat === 'AF6' ? 'parcial6' : 'parcial5'; // según marca de la clase
-  if (t === 'CPA' || t === 'SEM') return 'teoria';
+  if (t === 'CPA') return 'teoria';
+  if (t === 'SEM') return 'af3';
   // Tipos editables: usar TIPO_TO_AF inyectado desde config.json del grado
   if (t && typeof TIPO_TO_AF !== 'undefined' && TIPO_TO_AF[t]) {
     const af = TIPO_TO_AF[t];
     if (af === 'AF2') return 'lab';
     if (af === 'AF4') return 'info';
     if (af === 'AF5' || af === 'AF6') return 'parcial';
-    if (af === 'AF1' || af === 'AF3') return 'teoria';
+    if (af === 'AF1') return 'teoria';
+    if (af === 'AF3') return 'af3';
   }
   // Sin tipo o sin mapeo configurado: usar comportamiento legacy (AE/AEO/EPyOAE → parcial, resto → teoría)
   // Esto mantiene compatibilidad con grados existentes sin tipo_to_af en config.json
@@ -576,7 +582,7 @@ function computeGroupStats(weeks) {
       if (!asigData[c.asig_codigo]) {
         asigData[c.asig_codigo] = {
           nombre: c.asig_nombre, codigo: c.asig_codigo,
-          counts: { teoria:0, ps:0, parcial:0, parcial5:0, parcial6:0 },
+          counts: { teoria:0, af3:0, ps:0, parcial:0, parcial5:0, parcial6:0 },
           infoBySubgrupo: {},
           labBySubgrupo: {},
           fichas: getFichas(c.asig_codigo)   // datos esperados de la ficha (keyed by codigo)
@@ -604,7 +610,7 @@ function computeGroupStats(weeks) {
   return Object.values(asigData).sort((a,b) => a.nombre.localeCompare(b.nombre));
 }
 
-function buildActTable(allAsigs, groupKey) {
+function buildActTable(allAsigs, groupKey, opts = {}) {
   // DEBUG: verificar fichas
   const conFichas = allAsigs.filter(a => a.fichas !== null).length;
   const dbFichasCount = DB && DB.fichas ? Object.keys(DB.fichas).length : 0;
@@ -615,31 +621,40 @@ function buildActTable(allAsigs, groupKey) {
   }
 
   const ACT_META = {
-    teoria:   { label: '&#128218; Teor&iacute;a',          thCls: 'act-teoria-th',  tdCls: 'act-teoria-td'  },
-    info:     { label: '&#128187; Inform&aacute;tica',      thCls: 'act-info-th',    tdCls: 'act-info-td'    },
-    lab:      { label: '&#128300; Laboratorio',             thCls: 'act-lab-th',     tdCls: 'act-lab-td'     },
-    ps:       { label: '&#127981; Aula Espec&iacute;f.',    thCls: 'act-ps-th',      tdCls: 'act-ps-td'      },
-    parcial:  { label: '&#128221; Examen Parcial',          thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
-    parcial5: { label: '&#128221; AF5 &middot; Eval. cont.',thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
-    parcial6: { label: '&#127891; AF6 &middot; Eval. final',thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
+    teoria:   { label: '&#128218; Teor&iacute;a <small class="af-code">AF1</small>',         thCls: 'act-teoria-th',  tdCls: 'act-teoria-td'  },
+    af3:      { label: '&#128203; Aula Espec. <small class="af-code">AF3</small>',            thCls: 'act-ps-th',      tdCls: 'act-ps-td'      },
+    info:     { label: '&#128187; Inform&aacute;tica <small class="af-code">AF4</small>',     thCls: 'act-info-th',    tdCls: 'act-info-td'    },
+    lab:      { label: '&#128300; Laboratorio <small class="af-code">AF2</small>',            thCls: 'act-lab-th',     tdCls: 'act-lab-td'     },
+    ps:       { label: '&#127981; Aula Espec&iacute;f.',                                      thCls: 'act-ps-th',      tdCls: 'act-ps-td'      },
+    parcial:  { label: '&#128221; Examen Parcial',                                            thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
+    parcial5: { label: '&#128221; <small class="af-code">AF5</small> &middot; Eval. cont. in',  thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
+    parcial6: { label: '&#127891; <small class="af-code">AF6</small> &middot; Eval. cont. out', thCls: 'act-parcial-th', tdCls: 'act-parcial-td' },
   };
 
   const hasInfo     = allAsigs.some(a => Object.keys(a.infoBySubgrupo).length > 0);
   const hasLab      = allAsigs.some(a => Object.keys(a.labBySubgrupo).length > 0);
   const hasTeoria   = allAsigs.some(a => a.counts.teoria   > 0);
+  const hasAf3      = allAsigs.some(a => a.counts.af3      > 0 || (a.fichas && (a.fichas.af3 || 0) > 0));
   const hasPs       = allAsigs.some(a => a.counts.ps       > 0);
   const hasParcial  = allAsigs.some(a => a.counts.parcial  > 0);
-  const hasParcial5 = allAsigs.some(a => a.counts.parcial5 > 0);
-  const hasParcial6 = allAsigs.some(a => a.counts.parcial6 > 0);
+  // opts.hasParcial5 / opts.hasParcial6: flags globales calculadas en renderStats para que
+  // todos los grupos del cuatrimestre muestren las mismas columnas AF5/AF6.
+  const hasParcial5 = opts.hasParcial5 !== undefined
+    ? opts.hasParcial5
+    : allAsigs.some(a => a.counts.parcial5 > 0 || (a.fichas && a.fichas.af5 > 0));
+  const hasParcial6 = opts.hasParcial6 !== undefined
+    ? opts.hasParcial6
+    : allAsigs.some(a => a.counts.parcial6 > 0 || (a.fichas && a.fichas.af6 > 0));
 
   const cols = [];
-  if (hasTeoria)   cols.push('teoria');
-  if (hasInfo)     cols.push('info');
-  if (hasLab)      cols.push('lab');
+  if (hasTeoria)   cols.push('teoria');   // AF1
+  if (hasLab)      cols.push('lab');      // AF2
+  if (hasAf3)      cols.push('af3');      // AF3
+  if (hasInfo)     cols.push('info');     // AF4
+  if (hasParcial5) cols.push('parcial5'); // AF5
+  if (hasParcial6) cols.push('parcial6'); // AF6
   if (hasPs)       cols.push('ps');
   if (hasParcial)  cols.push('parcial');
-  if (hasParcial5) cols.push('parcial5');
-  if (hasParcial6) cols.push('parcial6');
 
   // ── Helper: comprueba si las horas reales de una práctica por subgrupo
   //    coinciden con el valor esperado de fichas (esperado en horas).
@@ -713,18 +728,23 @@ function buildActTable(allAsigs, groupKey) {
     const f = a.fichas;  // datos de fichas (puede ser null)
     const espAf1  = f ? f.af1  : null;
     const espAf2  = f ? f.af2  : null;
+    const espAf3  = f ? (f.af3 || 0) : null;
     const espAf4  = f ? f.af4  : null;
     const espAf5  = f ? f.af5  : null;
     const espAf6  = f ? f.af6  : null;
     // Total real presencial (sesiones × 2h): AF1+AF2+AF3+AF4+AF5 (sin AF6 — examen final no suma al total)
     const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
     const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
-    const totalReal = (a.counts.teoria + a.counts.ps + maxInfo + maxLab + a.counts.parcial5) * 2;
+    const totalReal = (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab + a.counts.parcial5) * 2;
 
     // ── Chequeos fichas ──────────────────────────────────────────────────
     // Teoría (AF1): sesiones × 2h vs ficha
     const teorReal = a.counts.teoria * 2;
     const teorOk   = (espAf1 === null) || (teorReal === espAf1);
+
+    // Aula Específica (AF3): sesiones × 2h vs ficha
+    const af3Real = a.counts.af3 * 2;
+    const af3Ok   = (espAf3 === null || espAf3 === 0) ? (af3Real === 0) : (af3Real === espAf3);
 
     // Informática (AF4): por subgrupo
     const infoEntries = Object.entries(a.infoBySubgrupo);
@@ -750,11 +770,11 @@ function buildActTable(allAsigs, groupKey) {
 
     // Total: todos los bloques presenciales (incluyendo AF5+AF6 ahora contabilizados)
     const presReal = totalReal;
-    const presEsp  = f ? (f.af1 + f.af2 + f.af4 + f.af5) : null;  // AF1+AF2+AF4+AF5 (AF6 excluido del total)
+    const presEsp  = f ? (f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5) : null;  // AF1+AF2+AF3+AF4+AF5 (AF6 excluido del total)
     const totalOk  = (presEsp === null) || (presReal === presEsp);
 
     // ¿Algún error en la asignatura? (con soporte de override manual por grupo)
-    const rawErr = !teorOk || !infoOk || !labOk || !p5Ok || !p6Ok || !totalOk;
+    const rawErr = !teorOk || !af3Ok || !infoOk || !labOk || !p5Ok || !p6Ok || !totalOk;
     const overrideKey = a.codigo + '::' + (groupKey || '');
     const isOverride = (DB._overrideSet || new Set()).has(overrideKey);
     const rowErr = rawErr && !isOverride;
@@ -782,6 +802,14 @@ function buildActTable(allAsigs, groupKey) {
         const cellStyle = teorOk ? '' : 'background:#fee2e2;border-left:3px solid #dc2626';
         return `<td class="${ACT_META.teoria.tdCls}" style="${cellStyle}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ses.</small>` : '&mdash;'}${espBadge}</td>`;
       }
+      if (t === 'af3') {
+        const h = a.counts.af3 * 2, n = a.counts.af3;
+        const showBadge = espAf3 !== null && (espAf3 > 0 || h > 0);
+        const espBadge = showBadge
+          ? `<div class="ficha-badge ${af3Ok?'ok':'err'}">${af3Ok?'&#10003;':'&#9888;'} Ficha: ${espAf3}h</div>` : '';
+        const cellStyle = af3Ok ? '' : 'background:#fee2e2;border-left:3px solid #dc2626';
+        return `<td class="${ACT_META.af3.tdCls}" style="${cellStyle}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ses.</small>` : '&mdash;'}${espBadge}</td>`;
+      }
       if (t === 'parcial5') return parcialAfCell(a.counts.parcial5, espAf5, ACT_META.parcial5.tdCls);
       if (t === 'parcial6') return parcialAfCell(a.counts.parcial6, espAf6, ACT_META.parcial6.tdCls);
       // ps
@@ -789,7 +817,7 @@ function buildActTable(allAsigs, groupKey) {
       return `<td class="${ACT_META[t].tdCls}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ses.</small>` : '&mdash;'}</td>`;
     }).join('');
 
-    // Columna total — horas reales (AF1+AF2+AF4+AF5) vs ficha — AF6 excluido
+    // Columna total — horas reales (AF1+AF2+AF3+AF4+AF5) vs ficha — AF6 excluido
     const totalBadge = (presEsp !== null)
       ? `<small style="display:block;color:${totalOk?'#166534':'#dc2626'};font-weight:700">${totalOk?'&#10003;':('&#9888; ficha:'+presEsp+'h')}</small>` : '';
     const totalStyle = totalOk ? '' : 'background:#fee2e2;color:#dc2626';
@@ -1983,24 +2011,36 @@ function renderStats() {
   const fichasBanner = fichasN > 0
     ? `<div style="background:#dcfce7;border:1px solid #16a34a;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:.82rem;color:#166534">
         &#10003; <strong>Fichas cargadas: ${fichasN} asignaturas</strong> (desde base de datos).
-        Se verifica AF1 (Teor&iacute;a) + AF2 (Lab) + AF4 (Info) contra el horario.
-        AF5 (eval. continua en horario lectivo) y AF6 (eval. final/continua fuera de horario) se muestran como referencia en la columna Total.
-        Las filas <span style="background:#fde8e8;padding:1px 6px;border-radius:3px;border:1px solid #dc2626">rojas</span> no cumplen AF1+AF2+AF4 de la ficha.
+        Se verifica AF1 (Teor&iacute;a) + AF2 (Lab) + AF3 (Aula Espec.) + AF4 (Info) + AF5 (Eval. cont. en horario lectivo) contra el horario.
+        AF6 (eval. final/continua fuera de horario) se muestra en columna propia cuando hay actividades EXF/EXP-AF6 registradas o la ficha lo indica.
+        Las filas <span style="background:#fde8e8;padding:1px 6px;border-radius:3px;border:1px solid #dc2626">rojas</span> no cumplen AF1+AF2+AF3+AF4+AF5 de la ficha.
        </div>`
     : `<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:.82rem;color:#991b1b">
         &#9888; <strong>Sin datos de fichas en BD</strong> — ejecuta <code>rebuild_fichas.py</code> para cargarlos.
        </div>`;
 
+  // Pre-calcular stats de todos los grupos para obtener flags de columnas consistentes:
+  // si CUALQUIER grupo (o ficha) tiene EXP/AF5 o EXP/AF6, todos los grupos muestran esa columna.
+  const allGroupStats = groupKeys.map(gKey => ({
+    gKey,
+    g: DB.grupos[gKey],
+    asigs: computeGroupStats(DB.grupos[gKey].semanas)
+  }));
+  const globalHasParcial5 = allGroupStats.some(s =>
+    s.asigs.some(a => a.counts.parcial5 > 0 || (a.fichas && a.fichas.af5 > 0))
+  );
+  const globalHasParcial6 = allGroupStats.some(s =>
+    s.asigs.some(a => a.counts.parcial6 > 0 || (a.fichas && a.fichas.af6 > 0))
+  );
+
   let sectionsHtml = fichasBanner;
-  groupKeys.forEach(gKey => {
-    const g      = DB.grupos[gKey];
+  allGroupStats.forEach(({ gKey, g, asigs }) => {
     const weeks  = g.semanas;
-    const asigs  = computeGroupStats(weeks);
     let totalH = 0, totalParciales = 0;
     asigs.forEach(a => {
       const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
       const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
-      totalH         += (a.counts.teoria + a.counts.ps + maxInfo + maxLab) * 2;
+      totalH         += (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
       totalParciales += a.counts.parcial;
     });
     const groupLabel = g.grupo === 'unico' ? 'Grupo &Uacute;nico' : 'Grupo ' + g.grupo;
@@ -2014,17 +2054,20 @@ function renderStats() {
       if (!f) return;
       if (overrideSet.has(a.codigo + '::' + gKey)) return;  // override manual de este grupo
       const teorReal = a.counts.teoria * 2;
+      const af3Real  = a.counts.af3 * 2;
       const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
       const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
-      const presReal = (a.counts.teoria + a.counts.ps + maxInfo + maxLab) * 2;
-      const presEsp  = f.af1 + f.af2 + f.af4;
+      const presReal = (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab + a.counts.parcial5) * 2;
+      const presEsp  = f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5;
       const infoE = Object.entries(a.infoBySubgrupo);
       const labE  = Object.entries(a.labBySubgrupo);
+      const espAf3r = f.af3 || 0;
       const teorOk  = (teorReal === f.af1);
+      const af3Ok   = espAf3r === 0 ? (af3Real === 0) : (af3Real === espAf3r);
       const infoOk  = infoE.length === 0 ? f.af4 === 0 : infoE.every(([,n]) => n*2 === f.af4);
       const labOk   = labE.length  === 0 ? f.af2 === 0 : labE.every(([,n]) => n*2 === f.af2);
       const totOk   = presReal === presEsp;
-      if (!teorOk || !infoOk || !labOk || !totOk) fichasErrCount++;
+      if (!teorOk || !af3Ok || !infoOk || !labOk || !totOk) fichasErrCount++;
     });
     const fichasErrBadge = fichasErrCount > 0
       ? `<span style="background:#dc2626;color:#fff;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:10px">&#9888; ${fichasErrCount} asig. no cumplen ficha</span>`
@@ -2041,7 +2084,7 @@ function renderStats() {
             ${totalParciales} ex&aacute;menes parciales
           </span>
         </div>
-        ${buildActTable(asigs, gKey)}
+        ${buildActTable(asigs, gKey, { hasParcial5: globalHasParcial5, hasParcial6: globalHasParcial6 })}
       </div>`;
   });
 
@@ -2064,12 +2107,33 @@ function onFilterChange() {
   render();
 }
 
-function updateAulaDatalist() {
-  const dl = document.getElementById('fAulaList');
-  if (!dl) return;
-  const aulas = AULAS_POR_CURSO[String(currentCurso)] || [];
-  dl.innerHTML = aulas.map(a => `<option value="${a}">`).join('');
+function updateAulaSelect(preserveVal) {
+  const sel = document.getElementById('fAula');
+  if (!sel) return;
+  const currentVal = (preserveVal !== undefined) ? preserveVal : sel.value;
+  // Preferir AULAS_POR_CURSO[curso] si está configurado; si no, usar classrooms.json completo
+  const aulasCurso = AULAS_POR_CURSO[String(currentCurso)] || [];
+  let items = [];
+  if (aulasCurso.length > 0) {
+    items = aulasCurso.map(a => ({ value: a, label: a }));
+  } else {
+    items = _classroomsAll
+      .filter(c => c.ClassroomCode)
+      .map(c => ({
+        value: c.ClassroomCode,
+        label: c.ClassroomCode
+      }));
+  }
+  sel.innerHTML = '<option value="">— Sin aula (Teoría) —</option>' +
+    items.map(i => `<option value="${i.value}">${i.label}</option>`).join('');
+  // Si el valor guardado no está en la lista (aula legacy), añadirlo como opción
+  if (currentVal && !items.find(i => i.value === currentVal)) {
+    sel.insertAdjacentHTML('beforeend', `<option value="${currentVal}">${currentVal}</option>`);
+  }
+  sel.value = currentVal;
 }
+// Alias para compatibilidad con llamadas antiguas
+function updateAulaDatalist() { updateAulaSelect(); }
 function updateGrupoOptions() {
   const sel = document.getElementById('grupoSelect');
   const key = currentCurso + '_' + currentCuat + '_grupo_';
@@ -2142,7 +2206,7 @@ function openEdit(claseId) {
   document.getElementById('addFields').style.display = 'none';
   document.getElementById('btnDelete').style.display = 'inline-flex';
   document.getElementById('fAsignatura').value = cls.asignatura_id || '';
-  document.getElementById('fAula').value = cls.aula || '';
+  updateAulaSelect(cls.aula || '');
   document.getElementById('fTipo').value = cls.tipo || '';
   document.getElementById('fSubgrupo').value = cls.subgrupo || '';
   document.getElementById('fObs').value = cls.observacion || '';
@@ -2660,6 +2724,10 @@ async function saveFestivo(fecha, action) {
 
 // ─── INIT ───
 (async function() {
+  // Cargar aulas antes del loadData para que el select esté poblado desde el primer render
+  try {
+    _classroomsAll = await fetch('/api/classrooms').then(r => r.json());
+  } catch(e) { _classroomsAll = []; }
   await loadData();
   const rows = await api('/api/festivos');
   FESTIVOS_MAP = {};

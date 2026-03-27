@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────
 #  Janux — Configuración de Grados
 #  Doble clic para abrir el asistente en el navegador
-#  Opciones: Grado nuevo · Doble Grado (PCEO)
+#  Opciones: Grado nuevo · Doble Grado (DTIE)
 # ─────────────────────────────────────────────
 cd "$(dirname "$0")"
 

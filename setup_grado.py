@@ -180,6 +180,7 @@ def _normalizar(rows, path):
         'creditos':     ['creditos', 'créditos', 'ects', 'credits'],
         'af1':          ['af1', 'teoria', 'teoría', 'theory', 'horas_teoria', 'h_teoria'],
         'af2':          ['af2', 'laboratorio', 'lab', 'laboratory', 'horas_lab', 'h_lab'],
+        'af3':          ['af3', 'campo', 'aula_abierta', 'visitas', 'h_af3'],
         'af4':          ['af4', 'informatica', 'informática', 'info', 'aula_info', 'horas_info', 'h_info'],
         'af5':          ['af5', 'eval_continua', 'evaluacion_continua', 'h_af5'],
         'af6':          ['af6', 'eval_final', 'evaluacion_final', 'h_af6'],
@@ -242,6 +243,7 @@ def _normalizar(rows, path):
             'creditos':     _float('creditos', 6.0),
             'af1':          _num('af1', 0),
             'af2':          _num('af2', 0),
+            'af3':          _num('af3', 0),
             'af4':          _num('af4', 0),
             'af5':          _num('af5', 0),
             'af6':          _num('af6', 0),
@@ -385,6 +387,7 @@ def create_tables(conn):
             creditos      REAL DEFAULT 0,
             af1           INTEGER DEFAULT 0,
             af2           INTEGER DEFAULT 0,
+            af3           INTEGER DEFAULT 0,
             af4           INTEGER DEFAULT 0,
             af5           INTEGER DEFAULT 0,
             af6           INTEGER DEFAULT 0
@@ -504,8 +507,8 @@ def insert_asignaturas_fichas(conn, asignaturas):
         )
         asig_id = cur.lastrowid
         conn.execute(
-            "INSERT INTO fichas (asignatura_id, creditos, af1, af2, af4, af5, af6) VALUES (?,?,?,?,?,?,?)",
-            (asig_id, a['creditos'], a['af1'], a['af2'], a['af4'], a.get('af5', 0), a.get('af6', 0))
+            "INSERT INTO fichas (asignatura_id, creditos, af1, af2, af3, af4, af5, af6) VALUES (?,?,?,?,?,?,?,?)",
+            (asig_id, a['creditos'], a['af1'], a['af2'], a.get('af3', 0), a['af4'], a.get('af5', 0), a.get('af6', 0))
         )
         count += 1
     conn.commit()

@@ -1,0 +1,17 @@
+[
+  {"escuela": "ETSII", "titulacion": "Máster Universitario en Energías Renovables - Plan 2025",                                                          "code": "MUEERR",       "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Máster Interuniversitario en Electroquímica, Ciencia y Tecnología",                                               "code": "MECyT",        "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Máster Universitario en Ingeniería Industrial",                                                                    "code": "MUII",         "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Máster Universitario en Ingeniería Ambiental y Procesos Sostenibles",                                             "code": "MUIAPS",       "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Máster Universitario en Organización Industrial",                                                                  "code": "MUOI",         "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Máster Universitario en Industria 4.0",                                                                           "code": "MUI4.0",       "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería Eléctrica",                                                                                   "code": "GIE",          "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería Electrónica Industrial y Automática",                                                         "code": "GIEIA",        "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería Mecánica",                                                                                    "code": "GIM",          "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería Química Industrial",                                                                          "code": "GIQI",         "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería en Tecnologías Industriales",                                                                 "code": "GITI",         "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería Biomédica",                                                                                   "code": "GIB",          "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Grado en Ingeniería de Diseño Industrial y Desarrollo de Producto",                                               "code": "GIDI",         "doble_grado": false},
+  {"escuela": "ETSII", "titulacion": "Doble Grado en Ingeniería de Diseño Industrial y Desarrollo de Producto + Ingeniería Mecánica",                   "code": "DTIE_GIDI-GIM",    "doble_grado": true},
+  {"escuela": "ETSII", "titulacion": "Doble Grado en Ingeniería Electrónica Industrial y Automática y en Ingeniería Biomédica",                         "code": "DTIE_GIEIA-GIB",   "doble_grado": true}
+]
