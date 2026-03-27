@@ -112,7 +112,7 @@ tr.conflict-row td{background:#fff3f5}
 <body>
 
 <div class="top-bar">
-  <img src="/api/logo_svg" alt="IAnus" style="height:64px;width:64px;border-radius:13px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
+  <img src="/api/logo_svg" alt="Janux" style="height:64px;width:64px;border-radius:13px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
   <div>
     <div style="font-size:1.1rem;font-weight:700">Gestor de Horarios — Nuevo Doble Grado</div>
     <div class="sub">Programa de Estudios Conjunto — asistente de configuración</div>
@@ -1410,7 +1410,7 @@ class PceoHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/grados':
             self._json(api_grados())
         elif self.path == '/api/logo_svg':
-            self._serve_file(BASE_DIR / 'docs' / 'logo_ianus.svg', 'image/svg+xml')
+            self._serve_file(BASE_DIR / 'docs' / 'logo_janux.svg', 'image/svg+xml')
         else:
             self._404()
 

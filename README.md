@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/logo_ianus.svg" alt="IAnus logo" width="180"/>
+  <img src="docs/logo_janux.svg" alt="Janux logo" width="180"/>
 </p>
 
-# IAnus — Gestor de Horarios Universitarios
+# Janux — Gestor de Horarios Universitarios
 
 <p align="center">
   <a href="docs/presentacion.pdf">
-    <img src="docs/img/slide_01.jpg" alt="IAnus — Ver presentación" width="100%"/>
+    <img src="docs/img/slide_01.jpg" alt="Janux — Ver presentación" width="100%"/>
   </a>
 </p>
 
@@ -37,7 +37,7 @@ Arquitectura mínima: servidor Python local + base de datos SQLite + frontend HT
 ## Estructura del repositorio
 
 ```
-IAnus/
+Janux/
 ├── servidor_horarios.py       # Servidor + frontend completo (único fichero)
 ├── nuevo_grado.py             # Asistente interactivo para crear un nuevo grado
 ├── setup_grado.py             # Inicialización de la estructura de un grado
@@ -50,7 +50,7 @@ IAnus/
 ├── LICENSE.md
 ├── README.md
 ├── docs/
-│   ├── logo_ianus.svg         # Logo IAnus (interfaz web)
+│   ├── logo_janux.svg         # Logo Janux (interfaz web)
 │   ├── logo.svg               # Logo institucional (SVG)
 │   ├── logo.pdf               # Logo institucional (PDF, fuente)
 │   ├── logo.png               # Logo institucional (PNG, generado)

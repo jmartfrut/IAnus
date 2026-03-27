@@ -193,11 +193,11 @@ def api_get_all(params):
         else []
     fichas_override = [f'{r["codigo"]}::{r["grupo_key"]}' for r in override_rows]
 
-    # Asignaturas destacadas (codigo::grupo_num)
-    destacadas_rows = conn.execute("SELECT codigo, grupo_num FROM asignaturas_destacadas").fetchall() \
+    # Asignaturas destacadas (codigo::grupo_num::act_type::subgrupo)
+    destacadas_rows = conn.execute("SELECT codigo, grupo_num, act_type, subgrupo FROM asignaturas_destacadas").fetchall() \
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='asignaturas_destacadas'").fetchone() \
         else []
-    destacadas = [f'{r["codigo"]}::{r["grupo_num"]}' for r in destacadas_rows]
+    destacadas = [f'{r["codigo"]}::{r["grupo_num"]}::{r["act_type"]}::{r["subgrupo"]}' for r in destacadas_rows]
 
     result = {
         "franjas": [dict(f) for f in franjas],
@@ -757,36 +757,24 @@ def api_reset_auto_finales(data):
 
 
 def ensure_destacadas_table():
-    """Crea la tabla asignaturas_destacadas si no existe e inserta datos iniciales.
-    Almacena pares (codigo, grupo_num) para resaltar asignaturas específicas
-    con fondo verde y bordes sombreados en la vista de horario."""
-    # Datos iniciales de asignaturas a destacar (codigo, grupo_num)
-    INITIAL_DESTACADAS = [
-        ("508102010", "2"),  # Elast. y Resist. de Materiales grupo 2
-        ("508103002", "1"),  # Teor. De Mec. y Maquinas grupo 1
-        ("508103003", "1"),  # Teor. de Estructuras grupo 1
-        ("508103011", "1"),  # Diseño de Elementos. de Maq. I grupo 1
-        ("508103006", "2"),  # Materiales en Ingeniería grupo 2
-        ("508103004", "2"),  # Ing. de Fluidos y Maq. Hidr. grupo 2
-        ("508103008", "1"),  # Const. Industriales I grupo 1
-        ("508103012", "1"),  # Diseño de Elementos. de Maq. II grupo 1
-        ("508103009", "1"),  # Ingeniería de Fabricación grupo 1
-        ("508104003", "1"),  # Máquinas Térmicas grupo 1 1c
-        ("508104002", "1"),  # Fund. Elect. Industrial grupo 1 1c
-    ]
+    """Crea la tabla asignaturas_destacadas si no existe.
+    Almacena tuplas (codigo, grupo_num, act_type, subgrupo) para resaltar
+    exactamente las clases con la misma actividad formativa y subgrupo."""
     conn = get_db()
+    # Migración: si existe la tabla con el esquema antiguo (sin act_type), se recrea.
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(asignaturas_destacadas)").fetchall()]
+    if cols and 'act_type' not in cols:
+        conn.execute("DROP TABLE IF EXISTS asignaturas_destacadas")
+        print("  Migración: tabla asignaturas_destacadas recreada con esquema act_type+subgrupo")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS asignaturas_destacadas (
             codigo    TEXT NOT NULL,
             grupo_num TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (codigo, grupo_num)
+            act_type  TEXT NOT NULL DEFAULT '',
+            subgrupo  TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (codigo, grupo_num, act_type, subgrupo)
         )
     """)
-    for codigo, grupo_num in INITIAL_DESTACADAS:
-        conn.execute(
-            "INSERT OR IGNORE INTO asignaturas_destacadas (codigo, grupo_num) VALUES (?,?)",
-            (codigo, grupo_num)
-        )
     conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM asignaturas_destacadas").fetchone()[0]
     print(f"  Asignaturas destacadas: {count} entradas")
@@ -867,31 +855,35 @@ def api_db_import(raw_bytes):
 
 
 def api_toggle_destacada(data):
-    """POST /api/destacada/toggle — añade o elimina un par (codigo, grupo_num) de asignaturas_destacadas."""
+    """POST /api/destacada/toggle — añade o elimina una tupla (codigo, grupo_num, act_type, subgrupo)
+    de asignaturas_destacadas. La estrella aplica solo a clases con la misma actividad y subgrupo."""
     codigo    = data.get("codigo", "").strip()
     grupo_num = str(data.get("grupo_num", "")).strip()
+    act_type  = data.get("act_type", "").strip()
+    subgrupo  = data.get("subgrupo", "").strip()
     if not codigo:
         return {"ok": False, "error": "codigo requerido"}
     conn = get_db()
     exists = conn.execute(
-        "SELECT 1 FROM asignaturas_destacadas WHERE codigo=? AND grupo_num=?",
-        (codigo, grupo_num)
+        "SELECT 1 FROM asignaturas_destacadas WHERE codigo=? AND grupo_num=? AND act_type=? AND subgrupo=?",
+        (codigo, grupo_num, act_type, subgrupo)
     ).fetchone()
     if exists:
         conn.execute(
-            "DELETE FROM asignaturas_destacadas WHERE codigo=? AND grupo_num=?",
-            (codigo, grupo_num)
+            "DELETE FROM asignaturas_destacadas WHERE codigo=? AND grupo_num=? AND act_type=? AND subgrupo=?",
+            (codigo, grupo_num, act_type, subgrupo)
         )
         action = "removed"
     else:
         conn.execute(
-            "INSERT OR IGNORE INTO asignaturas_destacadas (codigo, grupo_num) VALUES (?,?)",
-            (codigo, grupo_num)
+            "INSERT OR IGNORE INTO asignaturas_destacadas (codigo, grupo_num, act_type, subgrupo) VALUES (?,?,?,?)",
+            (codigo, grupo_num, act_type, subgrupo)
         )
         action = "added"
     conn.commit()
     conn.close()
-    return {"ok": True, "action": action, "codigo": codigo, "grupo_num": grupo_num}
+    return {"ok": True, "action": action, "codigo": codigo, "grupo_num": grupo_num,
+            "act_type": act_type, "subgrupo": subgrupo}
 
 
 # ─── ROUTE MAP ───
@@ -1019,8 +1011,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def serve_logo_svg(self):
-        """GET /api/logo_svg — devuelve el logo IAnus en formato SVG."""
-        svg_path = os.path.join(SCRIPT_DIR, "docs", "logo_ianus.svg")
+        """GET /api/logo_svg — devuelve el logo Janux en formato SVG."""
+        svg_path = os.path.join(SCRIPT_DIR, "docs", "logo_janux.svg")
         if not os.path.exists(svg_path):
             self.send_response(404); self.end_headers(); return
         data = open(svg_path, 'rb').read()
@@ -1609,7 +1601,7 @@ select:focus,input:focus{border-color:var(--primary-light)}
 
 <header>
   <div style="display:flex;align-items:center;gap:16px">
-    <img src="/api/logo_svg" alt="IAnus" style="height:68px;width:68px;border-radius:14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
+    <img src="/api/logo_svg" alt="Janux" style="height:68px;width:68px;border-radius:14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
     <div>
       <h1>Gestor de Horarios — DEGREE_ACRONYM_PLACEHOLDER &nbsp;Curso CURSO_LABEL_PLACEHOLDER</h1>
       <div class="subtitle" id="headerSubtitle">DEGREE_NAME_PLACEHOLDER · INSTITUTION_ACRONYM_PLACEHOLDER</div>
@@ -2037,7 +2029,9 @@ function isParcial(cls) {
 
 function isDestacada(cls) {
   if (!DB || !DB._destacadasSet || !cls.asig_codigo) return false;
-  return DB._destacadasSet.has(cls.asig_codigo + '::' + currentGroup);
+  const actType = getActType(cls);
+  const sg = cls.subgrupo || '';
+  return DB._destacadasSet.has(cls.asig_codigo + '::' + currentGroup + '::' + actType + '::' + sg);
 }
 
 function buildSubjectCard(cls, color, search, interactive) {
@@ -2046,7 +2040,9 @@ function buildSubjectCard(cls, color, search, interactive) {
   const cardColor = parcial ? 'color-parcial' : (destacada ? 'color-destacada' : color);
   const match = search && cls.asig_nombre && cls.asig_nombre.toLowerCase().includes(search);
   const onclick = interactive ? ` onclick="openEdit(${cls.id})"` : '';
-  const pceoBtnHtml = (!parcial && interactive && cls.asig_codigo) ? `<button class="pceo-btn${destacada?' active':''}" onclick="event.stopPropagation();togglePceo('${cls.asig_codigo}',currentGroup)" title="${destacada?'Quitar PCEO':'Marcar como PCEO'}">&#11088;</button>` : '';
+  const _actType = getActType(cls);
+  const _sg = cls.subgrupo || '';
+  const pceoBtnHtml = (!parcial && interactive && cls.asig_codigo) ? `<button class="pceo-btn${destacada?' active':''}" onclick="event.stopPropagation();togglePceo('${cls.asig_codigo}',currentGroup,'${_actType}','${_sg}')" title="${destacada?'Quitar PCEO':'Marcar como PCEO'}">&#11088;</button>` : '';
   return `<div class="subject-card ${cardColor}${match?' search-highlight':''}"${onclick} style="cursor:${interactive?'pointer':'default'}">
     ${pceoBtnHtml}
     ${parcial ? `<span class="parcial-badge">&#128221; EXAMEN ${cls.observacion.toUpperCase()}</span>` : ''}
@@ -2060,10 +2056,10 @@ function buildSubjectCard(cls, color, search, interactive) {
   </div>`;
 }
 
-async function togglePceo(codigo, grupo_num) {
-  const res = await api('/api/destacada/toggle', {codigo, grupo_num});
+async function togglePceo(codigo, grupo_num, act_type, subgrupo) {
+  const res = await api('/api/destacada/toggle', {codigo, grupo_num, act_type, subgrupo});
   if (res.ok) {
-    const key = codigo + '::' + grupo_num;
+    const key = codigo + '::' + grupo_num + '::' + act_type + '::' + subgrupo;
     if (res.action === 'added') {
       DB._destacadasSet.add(key);
     } else {

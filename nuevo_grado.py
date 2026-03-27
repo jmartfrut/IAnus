@@ -14,10 +14,13 @@ actividades, asignaturas) y genera la carpeta grados/<SIGLAS>/ con:
 import csv
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
+import time
 import traceback
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -161,7 +164,7 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
 <body>
 
 <div class="top-bar">
-  <img src="/api/logo_svg" alt="IAnus" style="height:64px;width:64px;border-radius:13px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
+  <img src="/api/logo_svg" alt="Janux" style="height:64px;width:64px;border-radius:13px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,0.3)"/>
   <div>
     <div class="h1" style="font-size:1.1rem;font-weight:700">Gestor de Horarios — Nuevo Grado</div>
     <div class="sub">Asistente de configuración inicial</div>
@@ -1473,7 +1476,7 @@ LANDING_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IAnus — Gestor de Horarios</title>
+<title>Janux — Gestor de Horarios</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3a;
@@ -1507,9 +1510,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
 <body>
 
 <div class="top-bar">
-  <img src="/api/logo_svg" alt="IAnus">
+  <img src="/api/logo_svg" alt="Janux">
   <div class="top-bar-text">
-    <h1>IAnus — Gestor de Horarios</h1>
+    <h1>Janux — Gestor de Horarios</h1>
     <p>Asistente de configuración · UPCT</p>
   </div>
 </div>
@@ -1534,7 +1537,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
   </div>
 </div>
 
-<div class="footer">IAnus · Gestor de Horarios UPCT</div>
+<div class="footer">Janux · Gestor de Horarios UPCT</div>
 
 </body>
 </html>
@@ -1556,7 +1559,7 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/ping':
             self._json({'ok': True})
         elif self.path == '/api/logo_svg':
-            self._svg(BASE_DIR / 'docs' / 'logo_ianus.svg')
+            self._svg(BASE_DIR / 'docs' / 'logo_janux.svg')
         elif self.path == '/api/grados':
             self._json(pceo_api_grados() if _PCEO_AVAILABLE else {'grados': []})
         else:
@@ -1622,20 +1625,46 @@ class WizardHandler(BaseHTTPRequestHandler):
 # ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _wait_and_open(url, timeout=10):
+    """Espera a que el servidor responda al ping y luego abre el navegador."""
+    ping = f'http://127.0.0.1:{PORT}/api/ping'
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(ping, timeout=1)
+            print(f'  ✓ Servidor listo — abriendo navegador...')
+            result = subprocess.call(['open', url])
+            print(f'  open retornó: {result}')
+            return
+        except Exception as e:
+            print(f'  ping fallido: {e}')
+            time.sleep(0.1)
+    print(f'  Timeout — abriendo navegador de todas formas...')
+    result = subprocess.call(['open', url])
+    print(f'  open retornó: {result}')
+
+
 def main():
-    url = f'http://localhost:{PORT}'
+    browser_url = f'http://localhost:{PORT}'
+    url = f'http://127.0.0.1:{PORT}'
     print(f'')
     print(f'  ╔══════════════════════════════════════════╗')
-    print(f'  ║   IAnus — Gestor de Horarios UPCT        ║')
-    print(f'  ║   {url:<40} ║')
+    print(f'  ║   Janux — Gestor de Horarios UPCT        ║')
+    print(f'  ║   {browser_url:<40} ║')
     print(f'  ╚══════════════════════════════════════════╝')
     print(f'')
-    print(f'  Abre el navegador en {url}')
+    print(f'  Abre el navegador en {browser_url}')
     print(f'  Pulsa Ctrl+C para detener.')
     print(f'')
-    threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    HTTPServer.allow_reuse_address = True
-    server = HTTPServer(('localhost', PORT), WizardHandler)
+    class DualStackServer(HTTPServer):
+        address_family = socket.AF_INET6
+        def server_bind(self):
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            super().server_bind()
+
+    DualStackServer.allow_reuse_address = True
+    server = DualStackServer(('::', PORT), WizardHandler)
+    threading.Thread(target=_wait_and_open, args=(browser_url,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

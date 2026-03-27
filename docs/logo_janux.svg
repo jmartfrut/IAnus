@@ -20,14 +20,14 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="1.3429869"
-     inkscape:cx="441.92537"
-     inkscape:cy="400.22728"
+     inkscape:zoom="0.71374544"
+     inkscape:cx="376.18454"
+     inkscape:cy="-51.13868"
      inkscape:window-width="1792"
-     inkscape:window-height="988"
+     inkscape:window-height="1120"
      inkscape:window-x="0"
-     inkscape:window-y="30"
-     inkscape:window-maximized="1"
+     inkscape:window-y="0"
+     inkscape:window-maximized="0"
      inkscape:current-layer="svg22" />
   <defs
      id="defs4">
@@ -247,16 +247,14 @@
   <text
      x="260"
      y="418"
-     font-family="'Arial Black', 'Arial', sans-serif"
-     font-size="90"
+     font-family="'Arial Black', Arial, sans-serif"
+     font-size="90px"
      font-weight="900"
      text-anchor="middle"
      letter-spacing="-3"
      id="text21"><tspan
-       fill="#f5b940"
-       id="tspan20">IA</tspan><tspan
-       fill="white"
-       id="tspan21">nus</tspan></text>
+       style="fill:#ffffff"
+       id="tspan1">Janux</tspan></text>
   <rect
      x="110"
      y="430"
@@ -267,13 +265,13 @@
      id="rect21" />
   <text
      xml:space="preserve"
-     style="font-weight:bold;font-size:18.6667px;line-height:1.25;font-family:'Apple Braille';-inkscape-font-specification:'Apple Braille Bold';word-spacing:0px;fill:#ffcc00"
-     x="122.86047"
-     y="470.59283"
+     style="font-weight:bold;font-size:33.7668px;line-height:1.25;font-family:'Apple Braille';-inkscape-font-specification:'Apple Braille Bold';word-spacing:0px;fill:#ffcc00;stroke-width:1.80893"
+     x="176.39464"
+     y="474.6001"
      id="text23"><tspan
        sodipodi:role="line"
        id="tspan23"
-       x="122.86047"
-       y="470.59283"
-       style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:Arial;-inkscape-font-specification:'Arial Bold Italic'">Schedule smarter, Teach better</tspan></text>
+       x="176.39464"
+       y="474.6001"
+       style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:Arial;-inkscape-font-specification:'Arial Bold Italic';stroke-width:1.80893">Scheduler</tspan></text>
 </svg>

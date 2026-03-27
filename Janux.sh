@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────
-#  IAnus — Asistente de Nuevo Grado
+#  Janux — Asistente de Nuevo Grado
 # ─────────────────────────────────────────────
 cd "$(dirname "$0")"
 echo "🚀  Arrancando asistente en http://localhost:8091 ..."

@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 > nul
-title Asistente — Crear Nuevo Grado (IAnus)
+title Asistente — Crear Nuevo Grado (Janux)
 cd /d "%~dp0"
 echo ----------------------------------------
-echo  IAnus - Asistente de Nuevo Grado
+echo  Janux - Asistente de Nuevo Grado
 echo ----------------------------------------
 python --version > nul 2>&1
 if errorlevel 1 (
