@@ -25,7 +25,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-PORT = 8091
+PORT = 8092
 BASE_DIR = Path(__file__).parent
 
 # ─────────────────────────────────────────────────────────────────────────────

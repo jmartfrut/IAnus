@@ -7,11 +7,11 @@
 cd "$(dirname "$0")"
 
 # Matar proceso anterior en puerto 8091 si existe
-if lsof -ti:8091 &>/dev/null; then
-    echo "⚠  Puerto 8091 ocupado — cerrando proceso anterior..."
-    lsof -ti:8091 | xargs kill -9 2>/dev/null || true
+if lsof -ti:8092 &>/dev/null; then
+    echo "⚠  Puerto 8092 ocupado — cerrando proceso anterior..."
+    lsof -ti:8092 | xargs kill -9 2>/dev/null || true
     sleep 2
 fi
 
-echo "🚀  Arrancando Janux en http://127.0.0.1:8091 ..."
+echo "🚀  Arrancando Janux en http://127.0.0.1:8092 ..."
 python3 nuevo_grado.py
