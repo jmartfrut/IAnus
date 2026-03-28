@@ -37,7 +37,7 @@ from datetime import date, timedelta
 import io, os as _os, subprocess as _sp
 
 # ── Logo UPCT/GIM ─────────────────────────────────────────────────────────────
-_SCRIPT_DIR = _os.path.dirname(_os.path.abspath(__file__))
+_SCRIPT_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))  # raíz del proyecto
 _LOGO_PDF   = _os.path.join(_SCRIPT_DIR, 'docs', 'logo.pdf')
 _LOGO_PNG   = _os.path.join(_SCRIPT_DIR, 'docs', 'logo_upct.png')
 _LOGO_RATIO = 1528.08 / 181.707   # ancho:alto del PDF original
@@ -622,7 +622,7 @@ if __name__ == '__main__':
     import sqlite3, sys, os
 
     db_path = os.environ.get('DB_PATH_OVERRIDE') or os.path.join(
-        os.path.dirname(__file__), 'horarios.db')
+        os.path.dirname(os.path.dirname(__file__)), 'horarios.db')
     periodo = sys.argv[1] if len(sys.argv) > 1 else '1'
     curso_label = os.environ.get('CURSO_LABEL', '2025-2026')
 

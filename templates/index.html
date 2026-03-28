@@ -9,6 +9,21 @@
 :root {
   --primary: {{ COLOR_PRIMARY }}; --primary-light: {{ COLOR_PRIMARY_LIGHT }}; --accent: {{ COLOR_ACCENT }}; --bg: {{ COLOR_BG }};
 }
+.export-dropdown { position: relative; display: inline-block; }
+.export-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px);
+  background: #fff; border: 1px solid #ccc; border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18); z-index: 1000; min-width: 210px;
+  overflow: hidden;
+}
+.export-menu button {
+  display: block; width: 100%; text-align: left; padding: 9px 14px;
+  background: none; border: none; border-bottom: 1px solid #eee;
+  cursor: pointer; font-size: 13.5px; color: #333;
+}
+.export-menu button:last-child { border-bottom: none; }
+.export-menu button:hover { background: #f5f5f5; }
+.export-dropdown.open .export-menu { display: block; }
 </style>
 </head>
 <body>
@@ -64,10 +79,14 @@
   <div class="toolbar-group" style="margin-left:auto">
     <input type="text" id="searchInput" placeholder="Buscar asignatura..." style="width:190px" oninput="render()">
   </div>
-  <button class="btn btn-success" onclick="exportPDF()">&#128438; PDF semana</button>
-  <button class="btn btn-success" onclick="exportAllPDF()">&#128438; PDF todas las semanas</button>
-  <button class="btn btn-success" id="btnExportExcel" onclick="exportarExcel()" title="Exporta un Excel por curso con todos los grupos y cuatrimestres">&#128196; Exportar horarios {{ INSTITUTION_ACRONYM }}</button>
-  <button class="btn btn-primary" onclick="openAddModal()">+ Nueva clase</button>
+  <div class="export-dropdown" id="exportDropdown">
+    <button class="btn btn-success" onclick="toggleExportMenu(event)">&#128228; Exportar &#9660;</button>
+    <div class="export-menu" id="exportMenu">
+      <button onclick="exportPDF();closeExportMenu()">&#128438; PDF semana</button>
+      <button onclick="exportAllPDF();closeExportMenu()">&#128438; PDF todas las semanas</button>
+      <button id="btnExportExcel" onclick="exportarExcel();closeExportMenu()">&#128196; Excel</button>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -195,6 +214,9 @@
 </div>
 
 <script>
+function toggleExportMenu(e) { e.stopPropagation(); document.getElementById('exportDropdown').classList.toggle('open'); }
+function closeExportMenu() { document.getElementById('exportDropdown').classList.remove('open'); }
+document.addEventListener('click', closeExportMenu);
 // Constantes inyectadas por el servidor desde config.json
 const CURSO_STR           = "{{ CURSO_LABEL }}";
 const DEGREE_ACRONYM      = "{{ DEGREE_ACRONYM }}";

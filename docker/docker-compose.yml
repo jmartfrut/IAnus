@@ -1,6 +1,8 @@
 services:
   gestor-horarios:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: gestor-horarios:latest
     container_name: gestor-horarios
 

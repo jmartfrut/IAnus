@@ -34,6 +34,10 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .sch-cell{padding:6px 8px;min-height:70px;cursor:pointer;transition:background .15s;vertical-align:middle}
 .sch-cell:hover{background:#e8f0fc}
 .sch-empty{background:#fafbfc} .sch-empty:hover{background:#eef2f8}
+.sch-cell.drag-over-move{background:#d4edda!important;outline:2px dashed #27ae60;outline-offset:-2px}
+.sch-cell.drag-over-swap{background:#fff3cd!important;outline:2px dashed #e67e22;outline-offset:-2px}
+.subject-card.dragging{opacity:.4;cursor:grabbing}
+.subject-card[draggable="true"]{cursor:grab}
 .sch-no-lectivo{background:linear-gradient(135deg,#e8ecf0,#d5dbe3);cursor:default;text-align:center;vertical-align:middle}
 .sch-no-lectivo-single{background:var(--no-lectivo);cursor:default;text-align:center;vertical-align:middle}
 .sch-divider-row td{background:#c8d0db;padding:3px 0;border:none;height:6px;line-height:0}

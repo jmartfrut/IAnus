@@ -106,7 +106,7 @@ TIPO_TO_AF = _cfg("tipo_to_af", default={})
 
 # Tipos de clase predefinidos — se leen de tipos_actividad.json (fuente única compartida
 # con nuevo_grado.py). Si el fichero no existe, se usa la lista vacía como fallback seguro.
-_tipos_path = os.path.join(SCRIPT_DIR, "tipos_actividad.json")
+_tipos_path = os.path.join(SCRIPT_DIR, "config", "tipos_actividad.json")
 if os.path.exists(_tipos_path):
     with open(_tipos_path, encoding="utf-8") as _tf:
         TIPOS_ACTIVIDAD = json.load(_tf)
@@ -961,6 +961,59 @@ def api_toggle_destacada(data):
             "act_type": act_type, "subgrupo": subgrupo}
 
 
+def api_move_clase(data):
+    """Move a class to a different day/franja, swapping if the target slot is occupied (single class only)."""
+    conn = get_db()
+    clase_id  = data.get("id")
+    nueva_dia    = data.get("dia")
+    nuevo_franja = data.get("franja_id")
+    if not (clase_id and nueva_dia and nuevo_franja):
+        conn.close()
+        return {"error": "Faltan parámetros: id, dia, franja_id"}
+
+    # Obtener la clase origen
+    origen = conn.execute(
+        "SELECT id, semana_id, dia, franja_id FROM clases WHERE id=?", (clase_id,)
+    ).fetchone()
+    if not origen:
+        conn.close()
+        return {"error": "Clase no encontrada"}
+
+    semana_id = origen["semana_id"]
+
+    # Buscar clases en el slot destino (dentro de la misma semana)
+    destinos = conn.execute(
+        "SELECT id FROM clases WHERE semana_id=? AND dia=? AND franja_id=?",
+        (semana_id, nueva_dia, nuevo_franja)
+    ).fetchall()
+
+    if len(destinos) > 1:
+        conn.close()
+        return {"error": "El slot destino es un desdoble; no se puede intercambiar"}
+
+    try:
+        if len(destinos) == 1:
+            # SWAP: no hay UNIQUE constraint en (semana_id, dia, franja_id),
+            # así que intercambiamos directamente con dos UPDATEs
+            dest_id = destinos[0]["id"]
+            conn.execute("UPDATE clases SET dia=?, franja_id=? WHERE id=?",
+                         (nueva_dia, nuevo_franja, clase_id))
+            conn.execute("UPDATE clases SET dia=?, franja_id=? WHERE id=?",
+                         (origen["dia"], origen["franja_id"], dest_id))
+        else:
+            # MOVE simple a celda vacía
+            conn.execute("UPDATE clases SET dia=?, franja_id=? WHERE id=?",
+                         (nueva_dia, nuevo_franja, clase_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return {"error": str(e)}
+
+    conn.close()
+    return {"ok": True, "swap": len(destinos) == 1}
+
+
 # ─── ROUTE MAP ───
 
 API_ROUTES = {
@@ -968,6 +1021,7 @@ API_ROUTES = {
     "/api/clase/update":   ("POST", api_update_clase),
     "/api/clase/create":   ("POST", api_create_clase),
     "/api/clase/delete":   ("POST", api_delete_clase),
+    "/api/clase/move":     ("POST", api_move_clase),
     "/api/asignatura":     ("POST", api_manage_asignatura),
     "/api/ficha-override": ("POST", api_ficha_override),
     "/api/festivos":       ("GET",  api_get_festivos),
@@ -1016,7 +1070,7 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
     def serve_excel_export(self):
         import tempfile, importlib.util, zipfile
         try:
-            export_mod_path = os.path.join(SCRIPT_DIR, "exportar_excel.py")
+            export_mod_path = os.path.join(SCRIPT_DIR, "tools", "exportar_excel.py")
             if not os.path.exists(export_mod_path):
                 self.send_json({"error": "exportar_excel.py no encontrado"}, 500)
                 return
@@ -1057,7 +1111,7 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
 
     def serve_classrooms(self):
         """GET /api/classrooms — devuelve classrooms.json como lista de aulas."""
-        classrooms_path = os.path.join(SCRIPT_DIR, "classrooms.json")
+        classrooms_path = os.path.join(SCRIPT_DIR, "config", "classrooms.json")
         if os.path.exists(classrooms_path):
             with open(classrooms_path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -1117,7 +1171,7 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
         """GET /api/finales/export-pdf — genera PDF completo con los 3 períodos."""
         import importlib.util, traceback
         try:
-            mod_path = os.path.join(SCRIPT_DIR, "exportar_finales_pdf.py")
+            mod_path = os.path.join(SCRIPT_DIR, "tools", "exportar_finales_pdf.py")
             if not os.path.exists(mod_path):
                 self.send_json({"error": "exportar_finales_pdf.py no encontrado"}, 500)
                 return

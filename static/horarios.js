@@ -277,7 +277,8 @@ function buildSubjectCard(cls, color, search, interactive) {
   const _actType = getActType(cls);
   const _sg = cls.subgrupo || '';
   const dtieBtnHtml = (!parcial && interactive && cls.asig_codigo) ? `<button class="dtie-btn${destacada?' active':''}" onclick="event.stopPropagation();toggleDtie('${cls.asig_codigo}',currentGroup,'${_actType}','${_sg}')" title="${destacada?'Quitar DTIE':'Marcar como DTIE'}">&#11088;</button>` : '';
-  return `<div class="subject-card ${cardColor}${match?' search-highlight':''}"${onclick} style="cursor:${interactive?'pointer':'default'}">
+  const dragAttrs = interactive ? ` draggable="true" ondragstart="startDrag(event,${cls.id})" ondragend="endDrag(event)"` : '';
+  return `<div class="subject-card ${cardColor}${match?' search-highlight':''}"${onclick}${dragAttrs} style="cursor:${interactive?'grab':'default'}">
     ${dtieBtnHtml}
     ${parcial ? `<span class="parcial-badge">&#128221; ${cls.tipo === 'EXF' ? 'EXAMEN FINAL' : 'EXAMEN PARCIAL'}${cls.observacion ? ' &middot; '+cls.observacion : ''}</span>` : ''}
     ${destacada ? `<span class="parcial-badge" style="color:#ffffff;background:rgba(255,255,255,.15);font-size:.6rem">&#11088; ${DESTACADAS_BADGE}</span>` : ''}
@@ -343,10 +344,14 @@ function buildWeekTableHTML(week, interactive) {
         return;
       }
       const arr = classMap[day + '|' + f.id] || [];
+      // Atributos drag-drop para celdas destino (solo en modo interactivo)
+      const dropAttrs = interactive
+        ? ` ondragover="dragOverCell(event,${arr.length>0&&!arr[0].es_no_lectivo?'true':'false'})" ondragleave="dragLeaveCell(event)" ondrop="dropClase(event,'${day}',${f.id})"`
+        : '';
       if (!arr.length) {
         // Celda vacía
         html += interactive
-          ? `<td class="sch-cell sch-empty" onclick="openAdd(${week.semana_id},'${day}',${f.id})"><span class="empty-label">+ Anadir</span></td>`
+          ? `<td class="sch-cell sch-empty"${dropAttrs} onclick="openAdd(${week.semana_id},'${day}',${f.id})"><span class="empty-label">+ Anadir</span></td>`
           : `<td class="sch-cell sch-empty"></td>`;
       } else if (arr.length === 1 && arr[0].es_no_lectivo) {
         html += `<td class="sch-cell sch-no-lectivo-single"><span class="no-lectivo-label">&#128683; No lectivo</span></td>`;
@@ -360,12 +365,12 @@ function buildWeekTableHTML(week, interactive) {
         const addDesdobleBtn = interactive
           ? `<div class="split-add" onclick="event.stopPropagation();openAdd(${week.semana_id},'${day}',${f.id},true)">+ Desdoble</div>`
           : '';
-        html += `<td class="sch-cell${destacadaCls} ${match?'search-highlight':''}"${onclick}>
+        html += `<td class="sch-cell${destacadaCls} ${match?'search-highlight':''}"${onclick}${dropAttrs}>
           ${buildSubjectCard(cls, color, search, interactive)}
           ${addDesdobleBtn}
         </td>`;
       } else {
-        // Celda DIVIDIDA — desdoble
+        // Celda DIVIDIDA — desdoble (no es destino de swap, sí de move si se arrastra desde fuera)
         const cards = arr.map((cls, idx) =>
           (idx > 0 ? '<div class="split-divider"></div>' : '') +
           buildSubjectCard(cls, getSubjectColor(cls.asig_codigo), search, interactive)
@@ -2194,6 +2199,69 @@ function onTipoChange() {
   } else {
     row.style.display = 'none';
   }
+}
+
+// ─── DRAG & DROP ───
+let _dragClaseId = null;
+
+function startDrag(event, claseId) {
+  _dragClaseId = claseId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(claseId));
+  // Marcar la card como "dragging" tras el siguiente frame para que se vea el ghost
+  const card = event.currentTarget;
+  setTimeout(() => card.classList.add('dragging'), 0);
+  event.stopPropagation();
+}
+
+function endDrag(event) {
+  event.currentTarget.classList.remove('dragging');
+  // Limpiar todos los resaltados
+  document.querySelectorAll('.drag-over-move, .drag-over-swap').forEach(el => {
+    el.classList.remove('drag-over-move', 'drag-over-swap');
+  });
+}
+
+function dragOverCell(event, hasClase) {
+  if (_dragClaseId === null) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  const td = event.currentTarget;
+  // Quitar clases previas de todos los tds
+  document.querySelectorAll('.drag-over-move, .drag-over-swap').forEach(el => {
+    if (el !== td) { el.classList.remove('drag-over-move', 'drag-over-swap'); }
+  });
+  td.classList.toggle('drag-over-move', !hasClase);
+  td.classList.toggle('drag-over-swap',  hasClase);
+}
+
+function dragLeaveCell(event) {
+  // Solo quitar la clase si realmente salimos del td (no a un hijo)
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    event.currentTarget.classList.remove('drag-over-move', 'drag-over-swap');
+  }
+}
+
+async function dropClase(event, dia, franjaId) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over-move', 'drag-over-swap');
+  const claseId = _dragClaseId;
+  _dragClaseId = null;
+  if (!claseId) return;
+
+  // Verificar que no es el mismo slot (mismo dia+franja de la clase origen)
+  const week = getCurrentWeek();
+  const origen = week.clases.find(c => c.id === claseId);
+  if (origen && origen.dia === dia && origen.franja_id === franjaId) return;
+
+  const res = await api('/api/clase/move', { id: claseId, dia, franja_id: franjaId });
+  if (res.error) {
+    showToast('No se pudo mover: ' + res.error, true);
+    return;
+  }
+  if (res.swap) showToast('↕ Clases intercambiadas');
+  else          showToast('→ Clase movida');
+  await loadData();
 }
 
 function openEdit(claseId) {

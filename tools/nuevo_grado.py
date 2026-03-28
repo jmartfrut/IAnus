@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 PORT = 8092
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent  # raíz del proyecto (tools/../)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HTML WIZARD
@@ -1531,9 +1531,9 @@ def api_crear(data):
         write_csv(data.get('asignaturas', []), csv_path)
 
         # Ejecutar setup_grado.py
-        setup_script = BASE_DIR / 'setup_grado.py'
+        setup_script = BASE_DIR / 'tools' / 'setup_grado.py'
         if not setup_script.exists():
-            return {'ok': False, 'error': f'No se encuentra setup_grado.py en {BASE_DIR}'}
+            return {'ok': False, 'error': f'No se encuentra setup_grado.py en {BASE_DIR / "tools"}'}
 
         cmd = [sys.executable, str(setup_script),
                str(grado_dir), str(csv_path), '--force']
@@ -1685,21 +1685,21 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/grados':
             self._json(dtie_api_grados() if _DTIE_AVAILABLE else {'grados': []})
         elif self.path == '/api/tipos_actividad':
-            tipos_path = BASE_DIR / 'tipos_actividad.json'
+            tipos_path = BASE_DIR / 'config' / 'tipos_actividad.json'
             if tipos_path.exists():
                 with open(tipos_path, encoding='utf-8') as f:
                     self._json(json.load(f))
             else:
                 self._json([])
         elif self.path == '/api/titulaciones':
-            tit_path = BASE_DIR / 'titulaciones.json'
+            tit_path = BASE_DIR / 'config' / 'titulaciones.json'
             if tit_path.exists():
                 with open(tit_path, encoding='utf-8') as f:
                     self._json(json.load(f))
             else:
                 self._json([])
         elif self.path == '/api/classrooms':
-            classrooms_path = BASE_DIR / 'classrooms.json'
+            classrooms_path = BASE_DIR / 'config' / 'classrooms.json'
             if classrooms_path.exists():
                 with open(classrooms_path, encoding='utf-8') as f:
                     self._json(json.load(f))

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 title Asistente — Crear Nuevo Grado (Janux)
-cd /d "%~dp0"
+cd /d "%~dp0.."
 echo ----------------------------------------
 echo  Janux - Asistente de Nuevo Grado
 echo ----------------------------------------
@@ -20,5 +20,5 @@ if errorlevel 1 (
 )
 echo [INFO] Arrancando asistente en http://localhost:8091 ...
 start "" http://localhost:8091
-python nuevo_grado.py
+python tools\nuevo_grado.py
 pause

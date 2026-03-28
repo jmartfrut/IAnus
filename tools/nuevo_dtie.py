@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 PORT     = 8092
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent  # raíz del proyecto (tools/../)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HTML WIZARD

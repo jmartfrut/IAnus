@@ -4,7 +4,7 @@
 #  Doble clic para abrir el asistente en el navegador
 #  Opciones: Grado nuevo · Doble Grado (DTIE)
 # ─────────────────────────────────────────────
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Matar proceso anterior en puerto 8091 si existe
 if lsof -ti:8092 &>/dev/null; then
@@ -14,4 +14,4 @@ if lsof -ti:8092 &>/dev/null; then
 fi
 
 echo "🚀  Arrancando Janux en http://127.0.0.1:8092 ..."
-python3 nuevo_grado.py
+python3 tools/nuevo_grado.py
