@@ -1101,6 +1101,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             self.serve_static(parsed.path)
         elif parsed.path == "/api/exportar_excel":
             self.serve_excel_export()
+        elif parsed.path == "/api/exportar_institucional":
+            self.serve_institucional_export()
         elif parsed.path == "/api/finales/export-pdf":
             params = parse_qs(parsed.query)
             self.serve_finales_pdf(params)
@@ -1153,6 +1155,54 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Disposition", f'attachment; filename="{zip_name}"')
+            self.send_header("Content-Length", len(data))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            import traceback
+            self.send_json({"error": str(e), "trace": traceback.format_exc()}, 500)
+
+    def serve_institucional_export(self):
+        """GET /api/exportar_institucional — Excel formato BD institucional UPCT."""
+        import tempfile, importlib.util
+        try:
+            mod_path = os.path.join(SCRIPT_DIR, "tools", "exportar_institucional.py")
+            if not os.path.exists(mod_path):
+                self.send_json({"error": "exportar_institucional.py no encontrado"}, 500)
+                return
+
+            # Prioridad: config/weeks.json → weeks.xls (raíz)
+            weeks_json = os.path.join(SCRIPT_DIR, "config", "weeks.json")
+            weeks_xls  = os.path.join(SCRIPT_DIR, "weeks.xls")
+            weeks_path = weeks_json if os.path.exists(weeks_json) else weeks_xls
+            if not os.path.exists(weeks_path):
+                self.send_json({"error": "No se encuentra config/weeks.json ni weeks.xls"}, 500)
+                return
+
+            spec = importlib.util.spec_from_file_location("exportar_institucional", mod_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            classrooms_path = os.path.join(SCRIPT_DIR, "config", "classrooms.json")
+            curso_label = CURSO_LABEL.replace("-", "_")
+            filename = f"Horarios_Institucional_{EXPORT_PREFIX}_{curso_label}.xlsx"
+
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
+            os.close(tmp_fd)
+            try:
+                mod.exportar(DB_PATH, _cfg_path, weeks_path, tmp_path, classrooms_path)
+                with open(tmp_path, 'rb') as f:
+                    data = f.read()
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Content-Length", len(data))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()

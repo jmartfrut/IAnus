@@ -2492,6 +2492,37 @@ async function exportarExcel() {
   }
 }
 
+async function exportarInstitucional() {
+  const btn = document.getElementById('btnExportInstitucional');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '&#9203; Generando…';
+  try {
+    const resp = await fetch('/api/exportar_institucional');
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({error: 'Error desconocido'}));
+      alert('Error al exportar: ' + (err.error || resp.statusText));
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="([^"]+)"/);
+    a.download = match ? match[1] : `Horarios_Institucional_${EXPORT_PREFIX}.xlsx`;
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
 async function exportPDF() {
   const week = getCurrentWeek();
   if (!week) return;
