@@ -855,17 +855,16 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
     const p5Real = a.counts.parcial5 * 2;
     const p5Ok   = (espAf5 === null) || (p5Real === espAf5);
 
-    // AF6 (EXF + EXP→parcial6): sesiones × 2h vs ficha
+    // AF6 (EXF + EXP→parcial6): solo informativo, no entra en el chequeo de cumplimiento
     const p6Real = a.counts.parcial6 * 2;
-    const p6Ok   = (espAf6 === null) || (p6Real === espAf6);
 
     // Total: todos los bloques presenciales (incluyendo AF5+AF6 ahora contabilizados)
     const presReal = totalReal;
     const presEsp  = f ? (f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5) : null;  // AF1+AF2+AF3+AF4+AF5 (AF6 excluido del total)
     const totalOk  = (presEsp === null) || (presReal === presEsp);
 
-    // ¿Algún error en la asignatura? (con soporte de override manual por grupo)
-    const rawErr = !teorOk || !af3Ok || !infoOk || !labOk || !p5Ok || !p6Ok || !totalOk;
+    // ¿Algún error en la asignatura? AF6 excluido del chequeo (es solo referencia)
+    const rawErr = !teorOk || !af3Ok || !infoOk || !labOk || !p5Ok || !totalOk;
     const overrideKey = a.codigo + '::' + (groupKey || '');
     const isOverride = (DB._overrideSet || new Set()).has(overrideKey);
     const rowErr = rawErr && !isOverride;
@@ -902,7 +901,14 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
         return `<td class="${ACT_META.af3.tdCls}" style="${cellStyle}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ses.</small>` : '&mdash;'}${espBadge}</td>`;
       }
       if (t === 'parcial5') return parcialAfCell(a.counts.parcial5, espAf5, ACT_META.parcial5.tdCls);
-      if (t === 'parcial6') return parcialAfCell(a.counts.parcial6, espAf6, ACT_META.parcial6.tdCls);
+      if (t === 'parcial6') {
+        // AF6 es solo referencia: mostrar horas reales + valor de ficha en azul, sin chequeo de cumplimiento
+        const h = p6Real, n = a.counts.parcial6;
+        if (!n && !espAf6) return `<td class="${ACT_META.parcial6.tdCls}">&mdash;</td>`;
+        const badge = (espAf6 !== null && espAf6 !== undefined)
+          ? `<div class="ficha-badge" style="background:#f0f9ff;color:#0369a1;border-color:#7dd3fc">&#128203; Ficha:&nbsp;${espAf6}h</div>` : '';
+        return `<td class="${ACT_META.parcial6.tdCls}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ex.</small>` : '&mdash;'}${badge}</td>`;
+      }
       // ps
       const h = a.counts[t] * 2, n = a.counts[t];
       return `<td class="${ACT_META[t].tdCls}">${h ? `<strong>${h}h</strong><small>${n}&nbsp;ses.</small>` : '&mdash;'}</td>`;
@@ -2103,7 +2109,7 @@ function renderStats() {
     ? `<div style="background:#dcfce7;border:1px solid #16a34a;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:.82rem;color:#166534">
         &#10003; <strong>Fichas cargadas: ${fichasN} asignaturas</strong> (desde base de datos).
         Se verifica AF1 (Teor&iacute;a) + AF2 (Lab) + AF3 (Aula Espec.) + AF4 (Info) + AF5 (Eval. cont. en horario lectivo) contra el horario.
-        AF6 (eval. final/continua fuera de horario) se muestra en columna propia cuando hay actividades EXF/EXP-AF6 registradas o la ficha lo indica.
+        AF6 (eval. final/continua fuera de horario) se muestra en columna propia como referencia informativa — no afecta al estado de cumplimiento.
         Las filas <span style="background:#fde8e8;padding:1px 6px;border-radius:3px;border:1px solid #dc2626">rojas</span> no cumplen AF1+AF2+AF3+AF4+AF5 de la ficha.
        </div>`
     : `<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:8px 16px;margin-bottom:12px;font-size:.82rem;color:#991b1b">
@@ -2747,6 +2753,152 @@ async function exportAllPDF() {
     hidePdfOverlay();
     console.error(e);
     alert('Error al generar PDF: ' + e.message + '\n\nComprueba la conexión a internet (necesaria la primera vez).');
+  }
+}
+
+// ─── EXPORTACIÓN MASIVA — PDF TODO EL GRADO (ZIP) ───
+
+let _jszipPromise = null;
+function loadJSZip() {
+  if (_jszipPromise) return _jszipPromise;
+  _jszipPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return _jszipPromise;
+}
+
+async function exportAllGradoPDF() {
+  const allKeys = Object.keys(DB.grupos || {});
+  if (!allKeys.length) { alert('No hay grupos en este grado.'); return; }
+
+  // Guardar estado actual para restaurarlo al terminar
+  const savedCurso = currentCurso, savedCuat = currentCuat;
+  const savedGroup = currentGroup, savedWeek  = currentWeekIdx;
+
+  showPdfOverlay();
+  setPdfProgress(3, 'Cargando librerías…');
+
+  try {
+    const [,, logo] = await Promise.all([loadPdfLibs(), loadJSZip(), _loadLogo()]);
+    const { jsPDF } = window.jspdf;
+    const zip = new JSZip();
+
+    // Ordenar grupos: por curso → cuatrimestre → número de grupo
+    const parseKey = k => {
+      const gi = k.indexOf('_grupo_');
+      const prefix = k.substring(0, gi);
+      const grupo  = k.substring(gi + 7);
+      const fi = prefix.indexOf('_');
+      return { curso: prefix.substring(0, fi), cuat: prefix.substring(fi + 1), grupo };
+    };
+    const sortedKeys = allKeys.slice().sort((a, b) => {
+      const pa = parseKey(a), pb = parseKey(b);
+      if (pa.curso !== pb.curso) return pa.curso.localeCompare(pb.curso);
+      if (pa.cuat  !== pb.cuat)  return pa.cuat.localeCompare(pb.cuat);
+      return pa.grupo.localeCompare(pb.grupo, undefined, { numeric: true });
+    });
+
+    const total = sortedKeys.length;
+
+    for (let gi = 0; gi < total; gi++) {
+      const key  = sortedKeys[gi];
+      const { curso, cuat, grupo } = parseKey(key);
+
+      // Apuntar al grupo activo
+      currentCurso = curso; currentCuat = cuat; currentGroup = grupo; currentWeekIdx = 0;
+
+      const weeks = getWeeks();
+      if (!weeks.length) continue;
+
+      const basePct    = Math.round(5 + (gi / total) * 90);
+      const grupoLabel = grupo === 'unico' ? 'Único' : 'Grupo ' + grupo;
+      setPdfProgress(basePct, `PDF ${gi + 1}/${total}: Curso ${curso} · ${cuat} · ${grupoLabel}`);
+
+      // Generar PDF de todas las semanas de este grupo
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const PW  = pdf.internal.pageSize.getWidth();
+      const info = getPrintInfo();
+      const cap  = makeCaptureContainer();
+
+      for (let wi = 0; wi < weeks.length; wi++) {
+        const w = weeks[wi];
+        if (wi > 0) pdf.addPage('a4', 'l');
+
+        // Logo UPCT
+        if (logo) {
+          const lh = 11, lw = lh * (1528.08 / 181.707);
+          pdf.addImage(logo, 'PNG', PW - 8 - lw, 1.5, lw, lh);
+        }
+        // Cabecera
+        pdf.setFontSize(8);  pdf.setTextColor(90, 106, 122);
+        pdf.text('Horarios ' + DEGREE_ACRONYM + ' — Curso ' + CURSO_STR + ' — ' + info, 8, 6);
+        pdf.setFontSize(10); pdf.setTextColor(26, 58, 107);
+        pdf.text(w.descripcion, 8, 12);
+
+        // Tabla de semana
+        cap.innerHTML = buildWeekTableHTML(w, false);
+        await new Promise(r => setTimeout(r, 50));
+        const canvas = await html2canvas(cap, {
+          scale: 1.6, useCORS: true, backgroundColor: '#ffffff', logging: false
+        });
+        const pw = PW - 16;
+        const ratio = canvas.width / canvas.height;
+        let iw = pw, ih = pw / ratio;
+        const maxH = pdf.internal.pageSize.getHeight() - 18;
+        if (ih > maxH) { ih = maxH; iw = maxH * ratio; }
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 8, 14, iw, ih);
+
+        // Comentario al pie (si existe)
+        const gkB = _comentarioKey();
+        if (_comentarioCache[gkB] === undefined) await loadComentario(gkB);
+        const comB = (_comentarioCache[gkB] || '').trim();
+        if (comB) {
+          const pwB = PW - 16, ycB = 14 + ih + 4;
+          pdf.setDrawColor(180, 180, 180); pdf.setLineWidth(0.4);
+          pdf.line(8, ycB, 8 + pwB, ycB);
+          pdf.setFontSize(9);  pdf.setTextColor(100, 100, 100);
+          pdf.setFont(undefined, 'bold');
+          pdf.text('Observaciones:', 8, ycB + 5);
+          pdf.setFontSize(12); pdf.setTextColor(30, 30, 30);
+          pdf.setFont(undefined, 'normal');
+          pdf.text(pdf.splitTextToSize(comB, pwB), 8, ycB + 11);
+        }
+      }
+
+      document.body.removeChild(cap);
+
+      // Añadir al ZIP en carpeta por curso
+      const grupoFile = grupo === 'unico' ? 'GrupoUnico' : 'Grupo' + grupo;
+      zip.folder('Curso' + curso).file(`${cuat}_${grupoFile}.pdf`, pdf.output('blob'));
+    }
+
+    setPdfProgress(97, 'Generando archivo ZIP…');
+    const zipBlob = await zip.generateAsync({
+      type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 }
+    });
+    const url = URL.createObjectURL(zipBlob);
+    const a   = document.createElement('a');
+    a.download = `Horarios_${EXPORT_PREFIX}_${CURSO_STR}_todos.zip`;
+    a.href = url;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setPdfProgress(100, '¡Listo!');
+    setTimeout(hidePdfOverlay, 800);
+
+  } catch(e) {
+    hidePdfOverlay();
+    console.error(e);
+    alert('Error al generar PDFs: ' + e.message + '\n\nComprueba la conexión a internet (necesaria la primera vez).');
+  } finally {
+    // Restaurar el estado de navegación original
+    currentCurso = savedCurso; currentCuat = savedCuat;
+    currentGroup = savedGroup; currentWeekIdx = savedWeek;
+    render();
   }
 }
 
