@@ -105,6 +105,19 @@ tr.conflict-row td{background:#fff3f5}
 .success-box p{font-size:.85rem;color:#3a5a3a}
 .conflict-banner{background:#fff3f5;border:1.5px solid #f5c0c8;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:.82rem;color:#7a1a2a;display:none}
 .conflict-banner strong{display:block;margin-bottom:4px}
+.conflict-popup{position:fixed;background:#fff;border:1.5px solid #f5c0c8;border-radius:9px;
+  box-shadow:0 6px 24px rgba(0,0,0,.16);padding:14px 16px;z-index:9999;
+  max-width:380px;min-width:230px;font-size:.8rem;line-height:1.5}
+.conflict-popup-title{font-weight:700;color:#7a1a2a;font-size:.82rem;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:center;gap:8px}
+.conflict-popup-close{cursor:pointer;color:#8a9ab0;font-size:1.1rem;line-height:1;flex-shrink:0}
+.conflict-popup-close:hover{color:#3a4a5a}
+.conf-pop-item{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0e8ec}
+.conf-pop-item:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.conf-pop-asig{font-weight:600;color:#3a4a5a;font-size:.79rem}
+.conf-pop-slots{margin-top:3px;color:#6a7a8a;font-size:.76rem;padding-left:8px}
+.conf-pop-slot{display:block}
+.conflict-icon.clickable{cursor:pointer}
 .summary-box{background:#fdf8fa;border:1.5px solid #e0d0d8;border-radius:9px;padding:14px 18px;font-size:.84rem;line-height:1.8;margin-bottom:16px}
 @media(max-width:600px){.row2,.row3,.row4{grid-template-columns:1fr}.stepper{justify-content:flex-start;overflow-x:auto}.step-line{width:16px}}
 </style>
@@ -125,9 +138,11 @@ tr.conflict-row td{background:#fff3f5}
   <div class="step-line"></div>
   <div class="step" data-step="2"><div class="step-circle">2</div><div class="step-label">Grados origen</div></div>
   <div class="step-line"></div>
-  <div class="step" data-step="3"><div class="step-circle">3</div><div class="step-label">Distribución</div></div>
+  <div class="step" data-step="3"><div class="step-circle">3</div><div class="step-label">Estructura</div></div>
   <div class="step-line"></div>
-  <div class="step" data-step="4"><div class="step-circle">4</div><div class="step-label">Generar</div></div>
+  <div class="step" data-step="4"><div class="step-circle">4</div><div class="step-label">Distribución</div></div>
+  <div class="step-line"></div>
+  <div class="step" data-step="5"><div class="step-circle">5</div><div class="step-label">Generar</div></div>
 </div>
 
 <!-- ══════ STEP 1: BÁSICO ══════ -->
@@ -137,39 +152,38 @@ tr.conflict-row td{background:#fff3f5}
 
   <div class="row2">
     <div class="field">
-      <label>Nombre completo del DTIE</label>
-      <input type="text" id="b-nombre" placeholder="Doble Grado en Ingeniería Mecánica e Industrial">
+      <label>Escuela</label>
+      <select id="b-escuela" onchange="onEscuelaChange()">
+        <option value="">— Selecciona una escuela —</option>
+      </select>
     </div>
     <div class="field">
-      <label>Siglas / clave</label>
-      <input type="text" id="b-siglas" placeholder="DTIE" maxlength="10" style="text-transform:uppercase"
-             oninput="this.value=this.value.toUpperCase().replace(/\s/g,'')">
-      <div class="hint">Nombre de la carpeta en grados/</div>
+      <label>Titulación DTIE</label>
+      <select id="b-nombre" onchange="onTitulacionChange()" disabled>
+        <option value="">— Selecciona primero una escuela —</option>
+      </select>
+      <div class="hint">Solo se muestran los dobles grados disponibles</div>
+    </div>
+  </div>
+  <input type="hidden" id="b-siglas">
+  <div class="row2">
+    <div class="field">
+      <label>Institución</label>
+      <input type="text" id="b-inst" placeholder="Universidad Politécnica de Cartagena" value="Universidad Politécnica de Cartagena">
+    </div>
+    <div class="field">
+      <label>Siglas institución</label>
+      <input type="text" id="b-inst-siglas" placeholder="UPCT" value="UPCT" maxlength="10">
     </div>
   </div>
   <div class="row2">
     <div class="field">
-      <label>Institución</label>
-      <input type="text" id="b-inst" placeholder="Universidad Politécnica de Cartagena">
-    </div>
-    <div class="field">
-      <label>Siglas institución</label>
-      <input type="text" id="b-inst-siglas" placeholder="UPCT" maxlength="10">
-    </div>
-  </div>
-  <div class="row3">
-    <div class="field">
       <label>Etiqueta de curso</label>
-      <input type="text" id="b-curso-label" placeholder="2025-2026">
+      <input type="text" id="b-curso-label" placeholder="2026-2027" value="2026-2027">
     </div>
     <div class="field">
       <label>Puerto del servidor</label>
       <input type="number" id="b-port" value="8082" min="1024" max="65535">
-    </div>
-    <div class="field">
-      <label>Badge Doble Grado (etiqueta ⭐)</label>
-      <input type="text" id="b-badge" placeholder="ej. DTIE GIM+GIDI">
-      <div class="hint">Texto del badge en la interfaz</div>
     </div>
   </div>
 
@@ -184,9 +198,26 @@ tr.conflict-row td{background:#fff3f5}
   <h2>2 · Grados de origen</h2>
   <div class="desc">Selecciona los dos grados cuyas asignaturas marcadas con ⭐ formarán el DTIE. Pulsa <strong>Cargar</strong> para leer las asignaturas destacadas de cada BD.</div>
 
+  <!-- Selector grado principal -->
+  <div style="background:#fef9ec;border:1.5px solid #e8c840;border-radius:9px;padding:12px 16px;margin-bottom:16px;font-size:.84rem;color:#5a4a10">
+    <strong>Grado principal:</strong> el grado principal hereda las franjas horarias y los tipos de actividad para el DTIE.
+    <div style="margin-top:10px;display:flex;gap:24px">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
+        <input type="radio" name="grado-principal" id="principal-a" value="a" checked
+               onchange="updatePrincipalCards()" style="accent-color:#6b1a3a;width:16px;height:16px">
+        <span class="source-badge" style="font-size:.75rem">A</span> Grado A es el principal
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600">
+        <input type="radio" name="grado-principal" id="principal-b" value="b"
+               onchange="updatePrincipalCards()" style="accent-color:#1a3a6b;width:16px;height:16px">
+        <span class="source-badge b" style="font-size:.75rem">B</span> Grado B es el principal
+      </label>
+    </div>
+  </div>
+
   <!-- Grado A -->
   <div class="source-card" id="card-a">
-    <h3>⭐ Grado A &nbsp;<span class="source-badge">origen A</span></h3>
+    <h3>⭐ Grado A &nbsp;<span class="source-badge">origen A</span>&nbsp;<span id="badge-principal-a" style="font-size:.68rem;background:#e8c840;color:#5a4a10;padding:2px 8px;border-radius:10px;font-weight:700">★ Principal</span></h3>
     <div class="row2">
       <div class="field">
         <label>Seleccionar grado disponible</label>
@@ -206,7 +237,7 @@ tr.conflict-row td{background:#fff3f5}
 
   <!-- Grado B -->
   <div class="source-card" id="card-b">
-    <h3>⭐ Grado B &nbsp;<span class="source-badge b">origen B</span></h3>
+    <h3>⭐ Grado B &nbsp;<span class="source-badge b">origen B</span>&nbsp;<span id="badge-principal-b" style="font-size:.68rem;background:#e8c840;color:#5a4a10;padding:2px 8px;border-radius:10px;font-weight:700;display:none">★ Principal</span></h3>
     <div class="row2">
       <div class="field">
         <label>Seleccionar grado disponible</label>
@@ -230,14 +261,59 @@ tr.conflict-row td{background:#fff3f5}
   </div>
 </div>
 
-<!-- ══════ STEP 3: DISTRIBUCIÓN ══════ -->
+<!-- ══════ STEP 3: ESTRUCTURA ══════ -->
 <div class="card" id="step3" style="display:none">
-  <h2>3 · Distribución de asignaturas por curso</h2>
+  <h2>3 · Estructura del DTIE</h2>
+  <div class="desc">Define el número de cursos, grupos por cuatrimestre y aulas del nuevo grado conjunto. Se precargan los datos del grado principal; ajústalos si es necesario.</div>
+
+  <div class="field" style="max-width:220px">
+    <label>Número de cursos</label>
+    <input type="number" id="e-num-cursos" value="5" min="1" max="8" oninput="renderEstructuraTable()">
+  </div>
+
+  <div class="sec-title">Grupos por curso</div>
+  <div class="tbl-wrap">
+    <table id="e-cursos-table">
+      <thead>
+        <tr>
+          <th>Curso</th>
+          <th>Grupos 1er cuatrimestre</th>
+          <th>Grupos 2º cuatrimestre</th>
+        </tr>
+      </thead>
+      <tbody id="e-cursos-tbody"></tbody>
+    </table>
+  </div>
+  <div class="hint" style="margin-top:8px">El número de grupos determina cuántos horarios paralelos se crean; cada grupo tendrá las mismas clases copiadas de los grados de origen.</div>
+
+  <div class="actions">
+    <button class="btn btn-secondary" onclick="goStep(2)">← Anterior</button>
+    <button class="btn btn-primary" onclick="goStep(4)">Siguiente →</button>
+  </div>
+</div>
+
+<!-- ══════ STEP 4: DISTRIBUCIÓN ══════ -->
+<div class="card" id="step4" style="display:none">
+  <h2>4 · Distribución de asignaturas por curso</h2>
   <div class="desc">Asigna a cada asignatura DTIE el curso y cuatrimestre en el nuevo grado. Mismo formato que el CSV de grado convencional. Las filas con ⚠️ indican solapamiento horario.</div>
 
   <div id="conflict-banner" class="conflict-banner"></div>
 
-  <div class="tbl-wrap" style="margin-top:12px">
+  <!-- Barra de importación CSV -->
+  <div style="display:flex;align-items:center;gap:10px;margin:14px 0;padding:12px 16px;background:#f0f4f8;border-radius:8px;border:1.5px solid #c8d4e0;flex-wrap:wrap">
+    <input type="file" id="csv-dtie-input" accept=".csv" style="display:none" onchange="importarCsvDtie(this.files[0])">
+    <button class="btn btn-outline" style="font-size:.82rem;padding:7px 14px" onclick="document.getElementById('csv-dtie-input').click()">📂 Importar CSV</button>
+    <button class="btn btn-secondary" style="font-size:.82rem;padding:7px 14px" onclick="cargarCsvDeConfig()">📋 Desde config/</button>
+    <select id="csv-config-sel" style="display:none;border:1px solid #c8d4e0;border-radius:7px;padding:6px 10px;font-size:.82rem;background:#fff" onchange="cargarCsvSeleccionado(this.value)">
+      <option value="">— seleccionar CSV —</option>
+    </select>
+    <div id="csv-import-status" style="font-size:.82rem;color:#6a7a8a;flex:1;min-width:180px">
+      Importa un CSV tipo <code style="background:#e8eef4;padding:1px 5px;border-radius:3px">fichas_DTIE_GIDI_GIM.csv</code> para precargar la distribución.
+    </div>
+    <button class="btn btn-secondary" id="btn-clear-csv" onclick="clearCsvDtie()" style="display:none;font-size:.8rem;padding:6px 14px">✕ Limpiar</button>
+  </div>
+
+  <div class="tbl-wrap" style="margin-top:4px">
     <table id="dist-table">
       <thead>
         <tr>
@@ -248,10 +324,7 @@ tr.conflict-row td{background:#fff3f5}
           <th>Cuat. origen</th>
           <th style="min-width:90px">Curso DTIE ↓</th>
           <th style="min-width:90px">Cuat. DTIE ↓</th>
-          <th>Créditos</th>
-          <th>AF1</th>
-          <th>AF2</th>
-          <th>AF4</th>
+          <th style="min-width:80px">Grupo origen</th>
           <th style="width:30px"></th>
         </tr>
       </thead>
@@ -259,19 +332,19 @@ tr.conflict-row td{background:#fff3f5}
     </table>
   </div>
   <div style="margin-top:8px;font-size:.76rem;color:#8a9ab0">
-    Los valores de Créditos/AF1/AF2/AF4 se heredan automáticamente de las fichas de origen.
-    Puedes editarlos si lo necesitas.
+    Los créditos y valores AF se heredan automáticamente de las BDs de origen y no son editables.
+    El campo <strong>Grupo origen</strong> permite seleccionar qué subgrupo se copia cuando hay más de uno en el grado de origen (dejar vacío para usar el grupo con más clases).
   </div>
 
   <div class="actions">
-    <button class="btn btn-secondary" onclick="goStep(2)">← Anterior</button>
-    <button class="btn btn-primary" onclick="goStep(4)">Siguiente →</button>
+    <button class="btn btn-secondary" onclick="goStep(3)">← Anterior</button>
+    <button class="btn btn-primary" onclick="goStep(5)">Siguiente →</button>
   </div>
 </div>
 
-<!-- ══════ STEP 4: APARIENCIA + GENERAR ══════ -->
-<div class="card" id="step4" style="display:none">
-  <h2>4 · Apariencia y generación</h2>
+<!-- ══════ STEP 5: APARIENCIA + GENERAR ══════ -->
+<div class="card" id="step5" style="display:none">
+  <h2>5 · Apariencia y generación</h2>
   <div class="desc">Personaliza los colores del grado DTIE y genera el proyecto.</div>
 
   <div class="sec-title">Colores de la interfaz</div>
@@ -309,7 +382,7 @@ tr.conflict-row td{background:#fff3f5}
   </div>
 
   <div class="actions">
-    <button class="btn btn-secondary" onclick="goStep(3)">← Anterior</button>
+    <button class="btn btn-secondary" onclick="goStep(4)">← Anterior</button>
     <button class="btn btn-green" id="btn-generate" onclick="generarDtie()">⚡ Generar DTIE</button>
   </div>
 </div>
@@ -318,6 +391,11 @@ tr.conflict-row td{background:#fff3f5}
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let fuenteData = { a: null, b: null };  // {asignaturas: [...], grado_nombre, db_path}
 let gradosDisponibles = [];
+let _titulacionesCache = [];
+let _escuelaActual = '';
+let _csvData = null;   // filas enriquecidas desde CSV; null = usar asignaturas destacadas
+let _conflictDetailMap = {};  // codigo → {otherCodigo → {nombre, slots:[{sem,dia,fl}]}}
+let _activeConflictPopup = null;
 
 // ─── STEPS ───────────────────────────────────────────────────────────────────
 function goStep(n) {
@@ -328,8 +406,9 @@ function goStep(n) {
     s.classList.toggle('active', sn === n);
     s.classList.toggle('done', sn < n);
   });
-  if (n === 3) buildDistTable();
-  if (n === 4) buildSummary();
+  if (n === 3) buildEstructuraTable();
+  if (n === 4) buildDistTable();
+  if (n === 5) buildSummary();
 }
 
 // ─── CARGAR GRADOS DISPONIBLES ───────────────────────────────────────────────
@@ -391,6 +470,68 @@ function validateFuentes() {
   goStep(3);
 }
 
+// ─── STEP 3: ESTRUCTURA ──────────────────────────────────────────────────────
+function buildEstructuraTable() {
+  // Pre-poblar desde degree_structure del grado principal (si está disponible)
+  const principal = document.querySelector('input[name="grado-principal"]:checked')?.value || 'a';
+  const src = fuenteData[principal];
+  const ds = src?.degree_structure || {};
+  const gpc = ds.grupos_por_curso || {};
+
+  // Determinar nCursos: del select, o inferido del grado principal, o por defecto 5
+  const numCursosEl = document.getElementById('e-num-cursos');
+  const nFromSrc = Object.keys(gpc).length;
+  if (numCursosEl && !numCursosEl._userEdited && nFromSrc > 0) {
+    numCursosEl.value = Math.max(nFromSrc, 5);  // DTIE: mínimo 5 cursos
+    numCursosEl._userEdited = false;
+  }
+
+  renderEstructuraTable(gpc);
+}
+
+function renderEstructuraTable(gpcHint) {
+  const nCursos = parseInt(document.getElementById('e-num-cursos').value) || 5;
+  const tbody = document.getElementById('e-cursos-tbody');
+
+  // Preserve existing edits
+  const existing = {};
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const c = tr.dataset.curso;
+    if (c) existing[c] = {
+      g1c: tr.querySelector('.e-g1c')?.value,
+      g2c: tr.querySelector('.e-g2c')?.value,
+    };
+  });
+
+  tbody.innerHTML = '';
+  const gpc = gpcHint || {};
+  for (let i = 1; i <= nCursos; i++) {
+    const cs = String(i);
+    const prev = existing[cs] || {};
+    const defG1c = prev.g1c ?? (gpc[cs]?.['1C'] ?? 1);
+    const defG2c = prev.g2c ?? (gpc[cs]?.['2C'] ?? 1);
+
+    const tr = document.createElement('tr');
+    tr.dataset.curso = cs;
+    tr.innerHTML = `
+      <td style="font-weight:600;color:#6b1a3a;text-align:center">${i}º</td>
+      <td><input type="number" class="e-g1c" value="${defG1c}" min="0" max="20" style="width:70px"></td>
+      <td><input type="number" class="e-g2c" value="${defG2c}" min="0" max="20" style="width:70px"></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function getEstructura() {
+  const cursos = [];
+  document.querySelectorAll('#e-cursos-tbody tr').forEach(tr => {
+    cursos.push({
+      g1c: parseInt(tr.querySelector('.e-g1c')?.value) || 1,
+      g2c: parseInt(tr.querySelector('.e-g2c')?.value) || 1,
+    });
+  });
+  return { cursos };
+}
+
 // ─── TABLA DE DISTRIBUCIÓN ───────────────────────────────────────────────────
 function buildDistTable() {
   const tbody = document.getElementById('dist-tbody');
@@ -399,43 +540,60 @@ function buildDistTable() {
   tbody.querySelectorAll('tr').forEach(tr => {
     const cod = tr.dataset.codigo;
     if (cod) existing[cod] = {
-      curso: tr.querySelector('.curso-dtie')?.value,
-      cuat:  tr.querySelector('.cuat-dtie')?.value,
-      cred:  tr.querySelector('.cred-v')?.value,
-      af1:   tr.querySelector('.af1-v')?.value,
-      af2:   tr.querySelector('.af2-v')?.value,
-      af4:   tr.querySelector('.af4-v')?.value,
+      curso:      tr.querySelector('.curso-dtie')?.value,
+      cuat:       tr.querySelector('.cuat-dtie')?.value,
+      grupo_orig: tr.querySelector('.grupo-orig-v')?.value,
     };
   });
 
-  const rows = [];
-  (fuenteData.a?.asignaturas || []).forEach(a => rows.push({...a, fuente:'a', fuente_label:'A'}));
-  (fuenteData.b?.asignaturas || []).forEach(a => rows.push({...a, fuente:'b', fuente_label:'B'}));
+  // Fuente de filas: CSV importado o asignaturas destacadas
+  let rows;
+  if (_csvData) {
+    rows = _csvData;
+  } else {
+    rows = [];
+    (fuenteData.a?.asignaturas || []).forEach(a => rows.push({...a, fuente:'a', fuente_label:'A'}));
+    (fuenteData.b?.asignaturas || []).forEach(a => rows.push({...a, fuente:'b', fuente_label:'B'}));
+  }
 
   tbody.innerHTML = '';
   rows.forEach(a => {
     const prev = existing[a.codigo] || {};
+    // En modo CSV: defCurso/defCuat vienen del CSV; en modo destacadas: del grupo origen
+    const defCurso     = prev.curso       || (_csvData ? String(a.curso_dtie||'1') : String(a.curso_origen||'1'));
+    const defCuat      = prev.cuat        || (_csvData ? (a.cuatrimestre||'1C')    : (a.cuatrimestre_origen||'1C'));
+    const defGrupoOrig = prev.grupo_orig  || a.grupo_num || '';
+    // Opciones de cuatrimestre: base 1C/2C + añadir si defCuat es otro valor (A, I, etc.)
+    const cuatBase = ['1C', '2C'];
+    if (!cuatBase.includes(defCuat)) cuatBase.push(defCuat);
+    const cuatHtml = cuatBase.map(o => `<option value="${o}"${defCuat===o?' selected':''}>${o}</option>`).join('');
+    // Indicador visual para códigos no encontrados en BD
+    const notFound = a.found === false;
+    const warnIcon = notFound ? '<span class="conflict-icon" title="Código no encontrado en la BD de origen"> ⚠</span>' : '';
     const tr = document.createElement('tr');
-    tr.dataset.codigo = a.codigo;
-    tr.dataset.fuente = a.fuente;
+    if (notFound) tr.style.background = '#fff3f5';
+    tr.dataset.codigo    = a.codigo;
+    tr.dataset.fuente    = a.fuente;
     tr.dataset.grupo_num = a.grupo_num || '';
+    // Almacenar valores AF/créditos como data-attributes (solo lectura, heredados de la BD)
+    tr.dataset.creditos  = a.creditos ?? 6;
+    tr.dataset.af1       = a.af1 ?? 0;
+    tr.dataset.af2       = a.af2 ?? 0;
+    tr.dataset.af4       = a.af4 ?? 0;
+    tr.dataset.af5       = a.af5 ?? 0;
+    tr.dataset.af6       = a.af6 ?? 0;
     tr.innerHTML = `
-      <td><span class="src-tag src-tag-${a.fuente}">${a.fuente_label}</span></td>
+      <td><span class="src-tag src-tag-${a.fuente}">${esc(a.fuente_label||a.fuente.toUpperCase())}</span>${warnIcon}</td>
       <td style="font-family:monospace;font-size:.78rem">${esc(a.codigo)}</td>
       <td>${esc(a.nombre)}</td>
       <td style="text-align:center">${a.curso_origen||'?'}</td>
       <td style="text-align:center">${a.cuatrimestre_origen||'?'}</td>
       <td><select class="curso-dtie" onchange="checkConflicts()">
-        ${[1,2,3,4,5,6].map(n=>`<option value="${n}"${(prev.curso||a.curso_origen||'1')==n?' selected':''}>${n}º</option>`).join('')}
+        ${[1,2,3,4,5,6].map(n=>`<option value="${n}"${defCurso==n?' selected':''}>${n}º</option>`).join('')}
       </select></td>
-      <td><select class="cuat-dtie" onchange="checkConflicts()">
-        <option value="1C"${(prev.cuat||a.cuatrimestre_origen||'1C')==='1C'?' selected':''}>1C</option>
-        <option value="2C"${(prev.cuat||a.cuatrimestre_origen||'1C')==='2C'?' selected':''}>2C</option>
-      </select></td>
-      <td><input type="number" class="cred-v" value="${prev.cred??a.creditos??6}" min="0" step="0.5" style="width:58px"></td>
-      <td><input type="number" class="af1-v" value="${prev.af1??a.af1??0}" min="0" style="width:48px"></td>
-      <td><input type="number" class="af2-v" value="${prev.af2??a.af2??0}" min="0" style="width:48px"></td>
-      <td><input type="number" class="af4-v" value="${prev.af4??a.af4??0}" min="0" style="width:48px"></td>
+      <td><select class="cuat-dtie" onchange="checkConflicts()">${cuatHtml}</select></td>
+      <td><input type="text" class="grupo-orig-v" value="${esc(defGrupoOrig)}" placeholder="vacío=auto"
+           title="Número de grupo origen a copiar (vacío=grupo con más clases)" style="width:72px"></td>
       <td class="conf-cell"></td>`;
     tbody.appendChild(tr);
   });
@@ -448,14 +606,18 @@ function getDistribucion() {
     rows.push({
       codigo:       tr.dataset.codigo,
       fuente:       tr.dataset.fuente,
-      grupo_num:    tr.dataset.grupo_num,
+      // grupo_origen editable prevalece sobre el grupo_num original del CSV
+      grupo_num:    tr.querySelector('.grupo-orig-v')?.value?.trim() || tr.dataset.grupo_num || '',
       nombre:       tr.querySelector('td:nth-child(3)').textContent,
       curso_dtie:   parseInt(tr.querySelector('.curso-dtie').value),
       cuatrimestre: tr.querySelector('.cuat-dtie').value,
-      creditos:     parseFloat(tr.querySelector('.cred-v').value)||0,
-      af1:          parseInt(tr.querySelector('.af1-v').value)||0,
-      af2:          parseInt(tr.querySelector('.af2-v').value)||0,
-      af4:          parseInt(tr.querySelector('.af4-v').value)||0,
+      // Créditos y AF son de solo lectura, heredados de la BD de origen
+      creditos:     parseFloat(tr.dataset.creditos)||0,
+      af1:          parseInt(tr.dataset.af1)||0,
+      af2:          parseInt(tr.dataset.af2)||0,
+      af4:          parseInt(tr.dataset.af4)||0,
+      af5:          parseInt(tr.dataset.af5)||0,
+      af6:          parseInt(tr.dataset.af6)||0,
     });
   });
   return rows;
@@ -463,39 +625,56 @@ function getDistribucion() {
 
 // ─── DETECCIÓN DE CONFLICTOS (cliente) ────────────────────────────────────────
 function checkConflicts() {
-  // Agrupa por (curso_dtie, cuatrimestre) y detecta si hay asigs de A y B
-  // con solapamiento en el slot_schedule cargado del servidor
   const dist = getDistribucion();
   const conflictCodigos = new Set();
-
-  // Agrupar slots por (curso, cuat)
-  const slotMap = {};  // "curso_cuat" -> {slot_key -> [codigo, ...]}
+  // slotMap: "curso_cuat" → {slot_key → [{codigo, nombre, sem, dia, fl}]}
+  const slotMap = {};
   dist.forEach(d => {
     const key = `${d.curso_dtie}_${d.cuatrimestre}`;
     if (!slotMap[key]) slotMap[key] = {};
-    const sched = getSchedule(d.codigo, d.fuente);
-    sched.forEach(s => {
+    getSchedule(d.codigo, d.fuente).forEach(s => {
       const sk = `${s.sem}_${s.dia}_${s.fr}`;
       if (!slotMap[key][sk]) slotMap[key][sk] = [];
-      slotMap[key][sk].push(d.codigo);
+      slotMap[key][sk].push({codigo: d.codigo, nombre: d.nombre, sem: s.sem, dia: s.dia, fl: s.fl || ''});
     });
   });
 
-  // Detectar solapamientos
+  // Construir mapa detallado: codigo → {otherCodigo → {nombre, slots[]}}
+  _conflictDetailMap = {};
   Object.values(slotMap).forEach(slots => {
-    Object.values(slots).forEach(codigos => {
-      if (codigos.length > 1) codigos.forEach(c => conflictCodigos.add(c));
+    Object.values(slots).forEach(entries => {
+      if (entries.length < 2) return;
+      entries.forEach(e => {
+        conflictCodigos.add(e.codigo);
+        if (!_conflictDetailMap[e.codigo]) _conflictDetailMap[e.codigo] = {};
+        entries.forEach(other => {
+          if (other.codigo === e.codigo) return;
+          if (!_conflictDetailMap[e.codigo][other.codigo])
+            _conflictDetailMap[e.codigo][other.codigo] = {nombre: other.nombre, slots: []};
+          _conflictDetailMap[e.codigo][other.codigo].slots.push(
+            {sem: e.sem, dia: e.dia, fl: e.fl}
+          );
+        });
+      });
     });
   });
 
   let nConflicts = 0;
   document.querySelectorAll('#dist-tbody tr').forEach(tr => {
-    const hasConflict = conflictCodigos.has(tr.dataset.codigo);
+    const cod = tr.dataset.codigo;
+    const hasConflict = conflictCodigos.has(cod);
     tr.classList.toggle('conflict-row', hasConflict);
-    tr.querySelector('.conf-cell').innerHTML = hasConflict
-      ? '<span class="conflict-icon" title="Solapamiento horario con otra asignatura en el mismo slot">⚠️</span>'
-      : '<span class="ok-icon">✓</span>';
-    if (hasConflict) nConflicts++;
+    const cell = tr.querySelector('.conf-cell');
+    if (hasConflict) {
+      cell.innerHTML = '<span class="conflict-icon clickable" title="Pulsa para ver los solapamientos">⚠️</span>';
+      cell.querySelector('.conflict-icon').addEventListener('click', ev => {
+        ev.stopPropagation();
+        showConflictPopup(ev.currentTarget, cod);
+      });
+      nConflicts++;
+    } else {
+      cell.innerHTML = '<span class="ok-icon">✓</span>';
+    }
   });
 
   const banner = document.getElementById('conflict-banner');
@@ -503,10 +682,71 @@ function checkConflicts() {
     banner.style.display = '';
     banner.innerHTML = `<strong>⚠️ ${nConflicts} asignatura${nConflicts!==1?'s':''} con solapamiento horario</strong>
       Las filas marcadas en rojo comparten alguna franja con otra asignatura del mismo curso/cuatrimestre DTIE.
-      El grado se generará igualmente; los conflictos quedarán registrados en la consola.`;
+      Pulsa ⚠️ para ver el detalle. El grado se generará igualmente.`;
   } else {
     banner.style.display = 'none';
   }
+}
+
+// ─── POPUP DE DETALLE DE SOLAPAMIENTOS ───────────────────────────────────────
+function showConflictPopup(anchor, codigo) {
+  // Cerrar popup anterior si existe
+  if (_activeConflictPopup) { _activeConflictPopup.remove(); _activeConflictPopup = null; }
+
+  const details = _conflictDetailMap[codigo] || {};
+  const entries = Object.entries(details);
+  if (!entries.length) return;
+
+  const popup = document.createElement('div');
+  popup.className = 'conflict-popup';
+
+  let html = `<div class="conflict-popup-title">
+    <span>⚠️ Solapamientos en mismo curso DTIE</span>
+    <span class="conflict-popup-close" title="Cerrar">✕</span>
+  </div>`;
+
+  entries.forEach(([otherCod, info]) => {
+    // Deduplicar slots y ordenar por semana
+    const seen = new Set();
+    const uniqueSlots = info.slots
+      .filter(s => { const k = `${s.sem}_${s.dia}_${s.fl}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => a.sem - b.sem);
+    const slotLines = uniqueSlots.slice(0, 8)
+      .map(s => `<span class="conf-pop-slot">Sem ${String(s.sem).padStart(2,' ')} · ${s.dia}${s.fl ? ' · ' + s.fl : ''}</span>`)
+      .join('');
+    const extra = uniqueSlots.length > 8 ? `<span class="conf-pop-slot" style="color:#aaa">… y ${uniqueSlots.length - 8} más</span>` : '';
+    html += `<div class="conf-pop-item">
+      <div class="conf-pop-asig">[${esc(otherCod)}] ${esc(info.nombre)}</div>
+      <div class="conf-pop-slots">${slotLines}${extra}</div>
+    </div>`;
+  });
+
+  popup.innerHTML = html;
+  document.body.appendChild(popup);
+  _activeConflictPopup = popup;
+
+  // Posicionar junto al ancla
+  const rect = anchor.getBoundingClientRect();
+  const pw = popup.offsetWidth;
+  const ph = popup.offsetHeight;
+  const left = Math.min(rect.right + 6, window.innerWidth - pw - 8);
+  const top  = Math.min(rect.top, window.innerHeight - ph - 8);
+  popup.style.left = Math.max(8, left) + 'px';
+  popup.style.top  = Math.max(8, top)  + 'px';
+
+  // Botón cerrar
+  popup.querySelector('.conflict-popup-close').addEventListener('click', () => {
+    popup.remove(); _activeConflictPopup = null;
+  });
+  // Cerrar al hacer clic fuera
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (_activeConflictPopup && !_activeConflictPopup.contains(e.target)) {
+        _activeConflictPopup.remove(); _activeConflictPopup = null;
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 50);
 }
 
 function getSchedule(codigo, fuente) {
@@ -519,9 +759,13 @@ function getSchedule(codigo, fuente) {
 function buildSummary() {
   const b = getBasico();
   const dist = getDistribucion();
+  const est = getEstructura();
   const nA = dist.filter(d => d.fuente === 'a').length;
   const nB = dist.filter(d => d.fuente === 'b').length;
   const cursos = [...new Set(dist.map(d => d.curso_dtie))].sort();
+  const estResumen = est.cursos.map((c, i) =>
+    `${i+1}º: ${c.g1c} gr.1C / ${c.g2c} gr.2C`
+  ).join('<br>  ');
   document.getElementById('summary-box').innerHTML = `
     <b>Grado DTIE:</b> ${b.nombre} (${b.siglas})<br>
     <b>Institución:</b> ${b.institucion} (${b.siglas_inst})<br>
@@ -529,6 +773,7 @@ function buildSummary() {
     <b>Fuente A:</b> ${fuenteData.a?.grado_nombre||'—'} — ${nA} asignaturas<br>
     <b>Fuente B:</b> ${fuenteData.b?.grado_nombre||'—'} — ${nB} asignaturas<br>
     <b>Total asignaturas:</b> ${dist.length} · Cursos DTIE: ${cursos.join(', ')||'—'}<br>
+    <b>Estructura:</b><br>  ${estResumen||'—'}<br>
     <b>Carpeta destino:</b> grados/${b.siglas}/
   `;
 }
@@ -542,7 +787,6 @@ function getBasico() {
     siglas_inst: document.getElementById('b-inst-siglas').value,
     curso_label: document.getElementById('b-curso-label').value,
     puerto:      document.getElementById('b-port').value || '8082',
-    badge:       document.getElementById('b-badge').value,
   };
 }
 
@@ -565,9 +809,12 @@ async function generarDtie() {
 
   consoleLog('Enviando datos al servidor…', 'info');
 
+  const principal = document.querySelector('input[name="grado-principal"]:checked')?.value || 'a';
   const payload = {
-    basico:       getBasico(),
-    apariencia:   getApariencia(),
+    basico:          getBasico(),
+    apariencia:      getApariencia(),
+    estructura:      getEstructura(),
+    grado_principal: principal,
     fuentes:      [
       {db_path: fuenteData.a.db_path, grado_nombre: fuenteData.a.grado_nombre || 'A'},
       {db_path: fuenteData.b.db_path, grado_nombre: fuenteData.b.grado_nombre || 'B'},
@@ -615,6 +862,192 @@ function consoleLog(text, cls) {
 
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── CSV IMPORT ──────────────────────────────────────────────────────────────
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i+1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === ',' && !inQuote) {
+      result.push(cur); cur = '';
+    } else { cur += ch; }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCSV(text) {
+  // Eliminar BOM (UTF-8 con BOM) si existe
+  const clean = text.replace(/^\uFEFF/, '');
+  const lines = clean.replace(/\r\n?/g, '\n').trim().split('\n');
+  const headers = parseCsvLine(lines[0]).map(h => h.trim());
+  const nCols = headers.length;
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCsvLine(line);
+    // Si hay más valores que cabeceras, el exceso pertenece al campo 'nombre' (índice 1)
+    // porque el CSV DTIE tiene estructura fija: codigo,nombre,grado_origen,curso_dtie,cuatrimestre,grupo_origen
+    const nExtra = vals.length - nCols;
+    const norm = nExtra > 0
+      ? [vals[0], vals.slice(1, 2 + nExtra).join(','), ...vals.slice(2 + nExtra)]
+      : vals;
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (norm[i] || '').trim());
+    return obj;
+  });
+}
+
+async function _resolverCSV(payload) {
+  const status = document.getElementById('csv-import-status');
+  const r = await fetch('/api/resolver_csv_dtie', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const res = await r.json();
+  if (!res.ok) { status.innerHTML = `<span style="color:#c0392b">❌ ${res.error}</span>`; return null; }
+  // Merge schedules en fuenteData para que checkConflicts() los vea
+  if (res.schedules?.a && fuenteData.a) Object.assign(fuenteData.a.schedules, res.schedules.a);
+  if (res.schedules?.b && fuenteData.b) Object.assign(fuenteData.b.schedules, res.schedules.b);
+  _csvData = res.rows;
+  buildDistTable();
+  const nOk  = res.rows.filter(r => r.found !== false).length;
+  const nErr = res.rows.filter(r => r.found === false).length;
+  const warn = res.warnings?.length ? `<br><span style="color:#e8a020">⚠️ ${res.warnings.length} aviso(s) — ver consola del navegador</span>` : '';
+  status.innerHTML = `<span style="color:#22863a">✅ ${nOk} asignaturas cargadas${nErr ? ` · <strong style="color:#c0392b">${nErr} no encontradas</strong>` : ''}</span>${warn}`;
+  document.getElementById('btn-clear-csv').style.display = '';
+  if (res.warnings?.length) console.warn('CSV DTIE warnings:', res.warnings);
+  return res;
+}
+
+async function importarCsvDtie(file) {
+  if (!file) return;
+  if (!fuenteData.a || !fuenteData.b) {
+    alert('Carga ambos grados en el paso 2 antes de importar el CSV.'); return;
+  }
+  const status = document.getElementById('csv-import-status');
+  status.innerHTML = '<em>Leyendo fichero…</em>';
+  try {
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (!rows.length) { status.innerHTML = '<span style="color:#c0392b">CSV vacío o sin filas.</span>'; return; }
+    status.innerHTML = `<em>Resolviendo ${rows.length} filas contra las BDs de origen…</em>`;
+    await _resolverCSV({
+      csv_rows: rows,
+      fuentes: [{db_path: fuenteData.a.db_path}, {db_path: fuenteData.b.db_path}]
+    });
+  } catch(e) {
+    document.getElementById('csv-import-status').innerHTML = `<span style="color:#c0392b">❌ ${e.message}</span>`;
+  }
+  document.getElementById('csv-dtie-input').value = '';  // reset para permitir reimportar
+}
+
+async function cargarCsvDeConfig() {
+  try {
+    const r = await fetch('/api/csvs_dtie');
+    const res = await r.json();
+    const sel = document.getElementById('csv-config-sel');
+    sel.innerHTML = '<option value="">— seleccionar CSV —</option>';
+    (res.csvs || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.path; opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    sel.style.display = '';
+    if (!res.csvs?.length) {
+      alert('No hay ficheros fichas_DTIE_*.csv en config/');
+      sel.style.display = 'none';
+    }
+  } catch(e) { alert('Error al listar CSVs: ' + e.message); }
+}
+
+async function cargarCsvSeleccionado(path) {
+  if (!path) return;
+  if (!fuenteData.a || !fuenteData.b) {
+    alert('Carga ambos grados en el paso 2 primero.'); return;
+  }
+  const status = document.getElementById('csv-import-status');
+  status.innerHTML = `<em>Cargando ${path.split('/').pop()}…</em>`;
+  try {
+    await _resolverCSV({
+      csv_path: path,
+      fuentes: [{db_path: fuenteData.a.db_path}, {db_path: fuenteData.b.db_path}]
+    });
+  } catch(e) {
+    status.innerHTML = `<span style="color:#c0392b">❌ ${e.message}</span>`;
+  }
+}
+
+function clearCsvDtie() {
+  _csvData = null;
+  document.getElementById('csv-import-status').innerHTML =
+    'Importa un CSV tipo <code style="background:#e8eef4;padding:1px 5px;border-radius:3px">fichas_DTIE_GIDI_GIM.csv</code> para precargar la distribución.';
+  document.getElementById('btn-clear-csv').style.display = 'none';
+  document.getElementById('csv-config-sel').style.display = 'none';
+  buildDistTable();
+}
+
+// ─── TITULACIONES DTIE ────────────────────────────────────────────────────────
+(function() {
+  fetch('/api/titulaciones')
+    .then(r => r.json())
+    .then(tits => {
+      _titulacionesCache = tits;
+      // Solo escuelas con dobles grados
+      const escuelas = [...new Set(tits.filter(t => t.doble_grado).map(t => t.escuela))];
+      const selEsc = document.getElementById('b-escuela');
+      if (!selEsc) return;
+      escuelas.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e; opt.textContent = e;
+        selEsc.appendChild(opt);
+      });
+      // Si solo hay una escuela, seleccionarla automáticamente
+      if (escuelas.length === 1) {
+        selEsc.value = escuelas[0];
+        onEscuelaChange();
+      }
+    })
+    .catch(() => console.warn('No se pudo cargar titulaciones.json'));
+})();
+
+function onEscuelaChange() {
+  const escuela = document.getElementById('b-escuela').value;
+  _escuelaActual = escuela;
+  const selTit = document.getElementById('b-nombre');
+  selTit.innerHTML = '';
+  document.getElementById('b-siglas').value = '';
+  if (!escuela) {
+    selTit.innerHTML = '<option value="">— Selecciona primero una escuela —</option>';
+    selTit.disabled = true;
+    return;
+  }
+  // Filtrar SOLO dobles grados de esa escuela
+  const filtradas = _titulacionesCache.filter(t => t.escuela === escuela && t.doble_grado);
+  selTit.innerHTML = '<option value="">— Selecciona una titulación DTIE —</option>';
+  filtradas.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.titulacion;
+    opt.dataset.code = t.code;
+    opt.textContent = t.code + ' · ' + t.titulacion;
+    selTit.appendChild(opt);
+  });
+  selTit.disabled = false;
+}
+
+function onTitulacionChange() {
+  const sel = document.getElementById('b-nombre');
+  const opt = sel && sel.options[sel.selectedIndex];
+  document.getElementById('b-siglas').value = (opt && opt.dataset.code) ? opt.dataset.code : '';
+}
+
+function updatePrincipalCards() {
+  const principal = document.querySelector('input[name="grado-principal"]:checked')?.value || 'a';
+  document.getElementById('badge-principal-a').style.display = principal === 'a' ? '' : 'none';
+  document.getElementById('badge-principal-b').style.display = principal === 'b' ? '' : 'none';
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -762,13 +1195,14 @@ def api_leer_dtie(data):
                 schedules[codigo] = []
                 continue
             clases = conn.execute("""
-                SELECT s.numero AS sem, c.dia, c.franja_id AS fr
+                SELECT s.numero AS sem, c.dia, c.franja_id AS fr, f.label AS fl
                 FROM clases c
                 JOIN semanas s ON s.id = c.semana_id
                 JOIN asignaturas a ON a.id = c.asignatura_id
+                JOIN franjas f ON f.id = c.franja_id
                 WHERE s.grupo_id = ? AND a.codigo = ? AND c.es_no_lectivo = 0
             """, (grupo_id, codigo)).fetchall()
-            schedules[codigo] = [{'sem': r[0], 'dia': r[1], 'fr': r[2]} for r in clases]
+            schedules[codigo] = [{'sem': r[0], 'dia': r[1], 'fr': r[2], 'fl': r[3]} for r in clases]
 
         # Nombre del grado (para mostrar en preview)
         grado_nombre = db_path_str  # fallback
@@ -781,12 +1215,23 @@ def api_leer_dtie(data):
             except Exception:
                 pass
 
+        # Leer degree_structure del config para pre-poblar el paso Estructura
+        degree_structure = {}
+        if cfg_path.exists():
+            try:
+                with open(cfg_path, encoding='utf-8') as f:
+                    cfg = json.load(f)
+                degree_structure = cfg.get('degree_structure', {})
+            except Exception:
+                pass
+
         conn.close()
         return {
-            'ok':           True,
-            'asignaturas':  asignaturas,
-            'schedules':    schedules,
-            'grado_nombre': grado_nombre,
+            'ok':               True,
+            'asignaturas':      asignaturas,
+            'schedules':        schedules,
+            'grado_nombre':     grado_nombre,
+            'degree_structure': degree_structure,
         }
 
     except Exception:
@@ -872,16 +1317,27 @@ def create_tables_dtie(conn):
     conn.commit()
 
 
-def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
+def generar_dtie_db(dtie_conn, src_conns, distribucion, estructura, log):
     """
     Genera la BD DTIE copiando clases de las BDs de origen.
     src_conns: [conn_a, conn_b]
     distribucion: [{codigo, fuente ('a'/'b'), grupo_num, nombre, curso_dtie,
                     cuatrimestre, creditos, af1, af2, af4}, ...]
+    estructura: {cursos: [{g1c, g2c, aula}, ...]}  — de la UI del paso Estructura
     log: función log(msg, tipo)
     Devuelve lista de conflictos detectados.
     """
     fuente_idx = {'a': 0, 'b': 1}
+    est_cursos = estructura.get('cursos', [])
+
+    # Helper: número de grupos para (curso, cuat) según la estructura configurada
+    def n_grupos_para(curso, cuat):
+        idx = int(curso) - 1
+        if idx < 0 or idx >= len(est_cursos):
+            return 1  # fallback
+        c = est_cursos[idx]
+        n = int(c.get('g1c' if cuat == '1C' else 'g2c', 1))
+        return max(1, n)  # al menos 1 grupo
 
     # 1. Franjas (de la fuente A)
     src_franjas = src_conns[0].execute(
@@ -911,22 +1367,34 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
         q = d['cuatrimestre']
         cuats_por_curso.setdefault(c, set()).add(q)
 
-    # 3. Crear grupos (uno por curso/cuatrimestre)
-    grupo_id_map = {}  # (curso, cuat) → dtie_grupo_id
+    # 3. Crear grupos: N por (curso, cuatrimestre) según estructura configurada
+    #    grupo_id_map: (curso, cuat, grupo_num) → dtie_grupo_id
+    #    también mantenemos (curso, cuat) → [lista de grupo_ids] para copiar clases a todos
+    grupo_id_map = {}    # (curso, cuat, grupo_num_str) → dtie_grupo_id
+    grupos_por_cc = {}   # (curso, cuat) → [dtie_grupo_id, ...]
+    total_grupos = 0
     for curso in sorted(cuats_por_curso.keys()):
         for cuat in sorted(cuats_por_curso[curso]):
-            clave = f"{curso}_{cuat}_grupo_unico"
-            cur = dtie_conn.execute(
-                "INSERT INTO grupos (curso, cuatrimestre, grupo, aula, clave) VALUES (?,?,?,?,?)",
-                (curso, cuat, 'unico', '', clave)
-            )
-            grupo_id_map[(curso, cuat)] = cur.lastrowid
+            n = n_grupos_para(curso, cuat)
+            ids_este_cc = []
+            for g in range(1, n + 1):
+                clave = f"{curso}_{cuat}_grupo_{g}"
+                cur = dtie_conn.execute(
+                    "INSERT INTO grupos (curso, cuatrimestre, grupo, aula, clave) VALUES (?,?,?,?,?)",
+                    (curso, cuat, str(g), '', clave)
+                )
+                gid = cur.lastrowid
+                grupo_id_map[(curso, cuat, str(g))] = gid
+                ids_este_cc.append(gid)
+                total_grupos += 1
+            grupos_por_cc[(curso, cuat)] = ids_este_cc
     dtie_conn.commit()
-    log(f'  ✅ {len(grupo_id_map)} grupos DTIE creados', 'ok')
+    log(f'  ✅ {total_grupos} grupos DTIE creados', 'ok')
 
     # 4. Copiar semanas desde la primera asignatura disponible de cada (curso, cuat)
+    #    Las mismas semanas se replican en TODOS los grupos del (curso, cuat)
     semana_map = {}  # (dtie_grupo_id, semana_num) → dtie_semana_id
-    for (curso, cuat), dtie_grupo_id in grupo_id_map.items():
+    for (curso, cuat), dtie_grupo_ids in grupos_por_cc.items():
         # Encontrar fuente para este (curso, cuat)
         src_conn = None
         src_grupo_clave = None
@@ -940,14 +1408,12 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
             continue
 
         # Buscar el grupo fuente con más clases del cuatrimestre indicado
-        # Primero intentar por clave exacta, luego por el que tiene más clases de ese cuatrimestre
         src_grupo = None
         if src_grupo_clave:
             src_grupo = src_conn.execute(
                 "SELECT id FROM grupos WHERE clave = ?", (src_grupo_clave,)
             ).fetchone()
         if not src_grupo:
-            # Grupo con más clases en ese cuatrimestre (representativo)
             src_grupo = src_conn.execute("""
                 SELECT g.id FROM grupos g
                 JOIN semanas s ON s.grupo_id = g.id
@@ -965,14 +1431,16 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
             (src_grupo_id,)
         ).fetchall()
 
-        for sem_num, sem_desc in semanas:
-            cur = dtie_conn.execute(
-                "INSERT INTO semanas (grupo_id, numero, descripcion) VALUES (?,?,?)",
-                (dtie_grupo_id, sem_num, sem_desc)
-            )
-            semana_map[(dtie_grupo_id, sem_num)] = cur.lastrowid
+        # Replicar las mismas semanas en cada grupo DTIE de este (curso, cuat)
+        for dtie_grupo_id in dtie_grupo_ids:
+            for sem_num, sem_desc in semanas:
+                cur = dtie_conn.execute(
+                    "INSERT INTO semanas (grupo_id, numero, descripcion) VALUES (?,?,?)",
+                    (dtie_grupo_id, sem_num, sem_desc)
+                )
+                semana_map[(dtie_grupo_id, sem_num)] = cur.lastrowid
 
-        log(f'  ✅ {len(semanas)} semanas copiadas para curso {curso} {cuat}', 'ok')
+        log(f'  ✅ {len(semanas)} semanas × {len(dtie_grupo_ids)} grupo(s) para curso {curso} {cuat}', 'ok')
 
     dtie_conn.commit()
 
@@ -1016,16 +1484,22 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
              int(d.get('af5') or 0),
              int(d.get('af6') or 0))
         )
-        # Marcar todas como destacadas en la BD DTIE
-        dtie_conn.execute(
-            "INSERT OR IGNORE INTO asignaturas_destacadas (codigo, grupo_num) VALUES (?,?)",
-            (codigo, f"{curso_dtie}_{cuat}_grupo_unico")
-        )
+        # Marcar como destacada en todos los grupos DTIE del (curso, cuat)
+        for gid_this in grupos_por_cc.get((curso_dtie, cuat), []):
+            # Obtener clave del grupo
+            g_row = dtie_conn.execute(
+                "SELECT clave FROM grupos WHERE id = ?", (gid_this,)
+            ).fetchone()
+            if g_row:
+                dtie_conn.execute(
+                    "INSERT OR IGNORE INTO asignaturas_destacadas (codigo, grupo_num) VALUES (?,?)",
+                    (codigo, g_row[0])
+                )
 
     dtie_conn.commit()
     log(f'  ✅ {len(distribucion)} asignaturas insertadas', 'ok')
 
-    # 7. Copiar clases
+    # 7. Copiar clases — se replican en TODOS los grupos del (curso, cuat)
     conflicts = []
     slot_map  = {}   # (dtie_grupo_id, sem_num, dia, new_franja_id) → codigo
     total_clases = 0
@@ -1033,15 +1507,14 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
     for d in distribucion:
         codigo     = d['codigo']
         fidx       = fuente_idx[d['fuente']]
-        grupo_clave = d.get('grupo_num', '')
         curso_dtie = int(d['curso_dtie'])
         cuat       = d['cuatrimestre']
 
-        src_conn      = src_conns[fidx]
-        dtie_grupo_id = grupo_id_map.get((curso_dtie, cuat))
-        new_asig_id   = asig_id_map.get(codigo)
+        src_conn        = src_conns[fidx]
+        dtie_grupo_ids  = grupos_por_cc.get((curso_dtie, cuat), [])
+        new_asig_id     = asig_id_map.get(codigo)
 
-        if dtie_grupo_id is None or new_asig_id is None:
+        if not dtie_grupo_ids or new_asig_id is None:
             log(f'  ⚠️ Sin grupo/asig DTIE para {codigo}, se omite', 'warn')
             continue
 
@@ -1055,22 +1528,49 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
 
         src_asig_id = src_asig[0]
 
-        # Buscar el grupo fuente con más clases de esta asignatura (más fiable que grupo_num)
-        best = src_conn.execute("""
-            SELECT g.id, COUNT(*) AS cnt
-            FROM clases c
-            JOIN semanas s ON s.id = c.semana_id
-            JOIN grupos g ON g.id = s.grupo_id
-            WHERE c.asignatura_id = ? AND c.es_no_lectivo = 0
-            GROUP BY g.id ORDER BY cnt DESC LIMIT 1
-        """, (src_asig_id,)).fetchone()
+        # Buscar el grupo fuente: primero por grupo_num indicado, luego por más clases
+        grupo_num_str = str(d.get('grupo_num', '')).strip()
+        src_grupo_id = None
+        if grupo_num_str:
+            # Intento 1: clave exacta (por si el usuario escribió la clave completa)
+            row = src_conn.execute(
+                "SELECT g.id FROM grupos g "
+                "JOIN semanas s ON s.grupo_id = g.id "
+                "JOIN clases c ON c.semana_id = s.id "
+                "WHERE c.asignatura_id = ? AND g.clave = ? "
+                "GROUP BY g.id LIMIT 1",
+                (src_asig_id, grupo_num_str)
+            ).fetchone()
+            if row:
+                src_grupo_id = row[0]
+            else:
+                # Intento 2: clave que termina en _grupo_{N}
+                row = src_conn.execute(
+                    "SELECT g.id FROM grupos g "
+                    "JOIN semanas s ON s.grupo_id = g.id "
+                    "JOIN clases c ON c.semana_id = s.id "
+                    "WHERE c.asignatura_id = ? AND g.clave LIKE ? "
+                    "GROUP BY g.id LIMIT 1",
+                    (src_asig_id, f'%_grupo_{grupo_num_str}')
+                ).fetchone()
+                if row:
+                    src_grupo_id = row[0]
 
-        if not best:
-            log(f'  ⚠️ Sin clases para {codigo} en fuente {d["fuente"].upper()}, se omite', 'warn')
-            continue
-
-        src_grupo_id = best[0]
-        franja_map    = franja_maps[fidx]
+        if src_grupo_id is None:
+            # Fallback: grupo con más clases de esta asignatura
+            best = src_conn.execute("""
+                SELECT g.id, COUNT(*) AS cnt
+                FROM clases c
+                JOIN semanas s ON s.id = c.semana_id
+                JOIN grupos g ON g.id = s.grupo_id
+                WHERE c.asignatura_id = ? AND c.es_no_lectivo = 0
+                GROUP BY g.id ORDER BY cnt DESC LIMIT 1
+            """, (src_asig_id,)).fetchone()
+            if not best:
+                log(f'  ⚠️ Sin clases para {codigo} en fuente {d["fuente"].upper()}, se omite', 'warn')
+                continue
+            src_grupo_id = best[0]
+        franja_map   = franja_maps[fidx]
 
         clases = src_conn.execute("""
             SELECT c.dia, c.franja_id, c.aula, c.subgrupo, c.observacion,
@@ -1080,39 +1580,55 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
             WHERE s.grupo_id = ? AND c.asignatura_id = ?
         """, (src_grupo_id, src_asig_id)).fetchall()
 
+        # Filtrar subgrupos: copiar solo los subgrupos marcados como destacados
+        # en la BD origen para este (codigo, grupo_num). Esto evita que se
+        # copien todos los subgrupos de prácticas cuando el usuario solo marcó uno.
+        if grupo_num_str:
+            starred_rows = src_conn.execute(
+                "SELECT DISTINCT subgrupo FROM asignaturas_destacadas "
+                "WHERE codigo = ? AND grupo_num = ?",
+                (codigo, grupo_num_str)
+            ).fetchall()
+            starred_subgrupos = {r[0] for r in starred_rows}
+            if starred_subgrupos:
+                # c[3] = subgrupo en el SELECT anterior
+                clases = [c for c in clases if c[3] in starred_subgrupos]
+
+        # Insertar clases en CADA grupo DTIE del (curso, cuat)
         n_copied = 0
-        for dia, src_franja_id, aula, subgrupo, observacion, es_no_lectivo, contenido, sem_num in clases:
-            dtie_semana_id = semana_map.get((dtie_grupo_id, sem_num))
-            if dtie_semana_id is None:
-                continue
+        for dtie_grupo_id in dtie_grupo_ids:
+            for dia, src_franja_id, aula, subgrupo, observacion, es_no_lectivo, contenido, sem_num in clases:
+                dtie_semana_id = semana_map.get((dtie_grupo_id, sem_num))
+                if dtie_semana_id is None:
+                    continue
 
-            new_franja_id = franja_map.get(src_franja_id, src_franja_id)
+                new_franja_id = franja_map.get(src_franja_id, src_franja_id)
 
-            # Conflict detection (sólo clases lectivas, sólo entre asignaturas distintas)
-            if not es_no_lectivo:
-                slot_key = (dtie_grupo_id, sem_num, dia, new_franja_id)
-                if slot_key in slot_map:
-                    prev = slot_map[slot_key]
-                    if prev != codigo:  # ignorar mismo asig con subgrupos distintos
-                        conf_key = tuple(sorted([prev, codigo])) + (sem_num, dia, new_franja_id)
-                        if conf_key not in {tuple(sorted([c['asig1'],c['asig2']]))+
-                                            (c['semana'],c['dia'],new_franja_id) for c in conflicts}:
-                            conflicts.append({
-                                'semana': sem_num, 'dia': dia,
-                                'asig1': prev, 'asig2': codigo
-                            })
-                else:
-                    slot_map[slot_key] = codigo
+                # Conflict detection (solo en el primer grupo, para no duplicar alertas)
+                if not es_no_lectivo and dtie_grupo_id == dtie_grupo_ids[0]:
+                    slot_key = (dtie_grupo_id, sem_num, dia, new_franja_id)
+                    if slot_key in slot_map:
+                        prev = slot_map[slot_key]
+                        if prev != codigo:
+                            conf_key = tuple(sorted([prev, codigo])) + (sem_num, dia, new_franja_id)
+                            if conf_key not in {tuple(sorted([c['asig1'], c['asig2']])) +
+                                                (c['semana'], c['dia'], new_franja_id) for c in conflicts}:
+                                conflicts.append({
+                                    'semana': sem_num, 'dia': dia,
+                                    'asig1': prev, 'asig2': codigo
+                                })
+                    else:
+                        slot_map[slot_key] = codigo
 
-            dtie_conn.execute("""
-                INSERT INTO clases
-                    (semana_id, dia, franja_id, asignatura_id, aula, subgrupo,
-                     observacion, es_no_lectivo, contenido)
-                VALUES (?,?,?,?,?,?,?,?,?)
-            """, (dtie_semana_id, dia, new_franja_id, new_asig_id,
-                  aula or '', subgrupo or '', observacion or '',
-                  es_no_lectivo or 0, contenido or ''))
-            n_copied += 1
+                dtie_conn.execute("""
+                    INSERT INTO clases
+                        (semana_id, dia, franja_id, asignatura_id, aula, subgrupo,
+                         observacion, es_no_lectivo, contenido)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                """, (dtie_semana_id, dia, new_franja_id, new_asig_id,
+                      aula or '', subgrupo or '', observacion or '',
+                      es_no_lectivo or 0, contenido or ''))
+                n_copied += 1
 
         total_clases += n_copied
 
@@ -1122,35 +1638,278 @@ def generar_dtie_db(dtie_conn, src_conns, distribucion, log):
     return conflicts
 
 
+def api_csvs_dtie(_=None):
+    """Lista los ficheros fichas_DTIE_*.csv disponibles en config/."""
+    config_dir = BASE_DIR / 'config'
+    result = []
+    if config_dir.exists():
+        for f in sorted(config_dir.glob('fichas_DTIE_*.csv')):
+            result.append({'name': f.name, 'path': str(f.relative_to(BASE_DIR))})
+    return {'csvs': result}
+
+
+def api_resolver_csv_dtie(data):
+    """
+    Enriquece filas CSV de distribución DTIE con fichas y schedules
+    leídos desde las BDs de los grados de origen.
+
+    Acepta:
+      csv_rows: [{"codigo","nombre","grado_origen","curso_dtie","cuatrimestre","grupo_origen"}, ...]
+      csv_path: ruta relativa a un CSV en el servidor (alternativa a csv_rows)
+      fuentes:  [{"db_path": "grados/GIM/horarios.db"}, {"db_path": "grados/GIDI/horarios.db"}]
+    """
+    import csv as _csv
+
+    try:
+      return _api_resolver_csv_dtie_impl(data)
+    except Exception:
+      return {'ok': False, 'error': traceback.format_exc()}
+
+
+def _api_resolver_csv_dtie_impl(data):
+    import csv as _csv
+
+    fuentes = data.get('fuentes', [{}, {}])
+
+    # ── Leer filas del CSV ────────────────────────────────────────────────────
+    # Campos fijos del CSV DTIE — 'nombre' en índice 1 puede contener comas sin escapar
+    _FIELDNAMES = ['codigo', 'nombre', 'grado_origen', 'curso_dtie', 'cuatrimestre', 'grupo_origen']
+    _N_COLS = len(_FIELDNAMES)
+
+    def _parse_dtie_row(raw_values):
+        """Reconstruye una fila aunque 'nombre' tenga comas sin escapar."""
+        n_extra = len(raw_values) - _N_COLS
+        if n_extra > 0:
+            raw_values = [raw_values[0],
+                          ','.join(raw_values[1:2 + n_extra]),
+                          *raw_values[2 + n_extra:]]
+        return dict(zip(_FIELDNAMES, raw_values))
+
+    csv_path_str = data.get('csv_path')
+    if csv_path_str:
+        csv_file = BASE_DIR / csv_path_str
+        if not csv_file.exists():
+            return {'ok': False, 'error': f'No se encuentra {csv_path_str}'}
+        with open(csv_file, encoding='utf-8-sig', newline='') as f:
+            reader = _csv.reader(f)
+            header = next(reader, None)   # descartar cabecera
+            if header is None:
+                return {'ok': False, 'error': 'CSV vacío.'}
+            csv_rows = [_parse_dtie_row(row) for row in reader if any(row)]
+    else:
+        csv_rows = data.get('csv_rows', [])
+
+    if not csv_rows:
+        return {'ok': False, 'error': 'No hay filas en el CSV.'}
+
+    # ── Conectar a las BDs fuente y mapear siglas → clave (a/b) ──────────────
+    fuente_map    = {}   # siglas_upper → 'a' | 'b'
+    conns         = {}   # 'a' | 'b'  → sqlite3.Connection
+    asig_col_sets = {}   # 'a' | 'b'  → set of column names in asignaturas
+
+    for key, f in zip(['a', 'b'], fuentes):
+        db_path_str = f.get('db_path', '')
+        if not db_path_str:
+            continue
+        db_path = resolve_db_path(db_path_str)
+        if not db_path.exists():
+            continue
+        # Siglas desde config.json o nombre de carpeta
+        cfg_path = db_path.parent / 'config.json'
+        try:
+            with open(cfg_path, encoding='utf-8') as fp:
+                cfg = json.load(fp)
+            siglas = cfg.get('degree', {}).get('acronym', db_path.parent.name)
+        except Exception:
+            siglas = db_path.parent.name
+        fuente_map[siglas.upper()]              = key
+        fuente_map[db_path.parent.name.upper()] = key  # fallback por carpeta
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            conns[key] = conn
+            # Detectar columnas disponibles en asignaturas (varía según BD)
+            asig_col_sets[key] = {
+                r[1] for r in conn.execute("PRAGMA table_info(asignaturas)").fetchall()
+            }
+        except Exception:
+            pass
+
+    # Normalización de cuatrimestre: C1→1C, C2→2C; el resto pasa tal cual (A, I…)
+    _CUAT_MAP = {'C1': '1C', 'C2': '2C', 'c1': '1C', 'c2': '2C',
+                 '1C': '1C', '2C': '2C'}
+
+    rows_out  = []
+    schedules = {'a': {}, 'b': {}}
+    warnings  = []
+
+    for row in csv_rows:
+        codigo     = str(row.get('codigo', '')).strip()
+        nombre_csv = str(row.get('nombre', '')).strip()
+        grado_orig = str(row.get('grado_origen', '')).strip().upper()
+        try:
+            curso_dtie = int(row.get('curso_dtie', 1) or 1)
+        except (ValueError, TypeError):
+            curso_dtie = 1
+        cuat_raw     = str(row.get('cuatrimestre', '1C')).strip()
+        cuatrimestre = _CUAT_MAP.get(cuat_raw, cuat_raw)
+        grupo_orig   = str(row.get('grupo_origen', '')).strip()
+
+        fuente = fuente_map.get(grado_orig)
+
+        base_row = {
+            'codigo': codigo, 'nombre': nombre_csv, 'grado_origen': grado_orig,
+            'fuente': fuente or 'a', 'fuente_label': (fuente or 'a').upper(),
+            'curso_dtie': curso_dtie, 'cuatrimestre': cuatrimestre,
+            'grupo_num': grupo_orig,
+            'curso_origen': None, 'cuatrimestre_origen': None,
+            'creditos': 6, 'af1': 0, 'af2': 0, 'af4': 0, 'af5': 0, 'af6': 0,
+        }
+
+        if fuente not in conns:
+            warnings.append(f'Grado "{grado_orig}" no cargado — {codigo} sin enriquecer.')
+            rows_out.append({**base_row, 'found': False})
+            continue
+
+        conn = conns[fuente]
+        a_cols = asig_col_sets.get(fuente, set())
+
+        # Buscar asignatura por código — adaptar SELECT a columnas disponibles
+        extra_cols = ', '.join(
+            c for c in ('curso', 'cuatrimestre') if c in a_cols
+        )
+        select_asig = f"SELECT id, nombre{', ' + extra_cols if extra_cols else ''} FROM asignaturas WHERE codigo = ?"
+        asig = conn.execute(select_asig, (codigo,)).fetchone()
+
+        if not asig:
+            warnings.append(f'Código {codigo} no encontrado en {grado_orig}.')
+            rows_out.append({**base_row, 'found': False})
+            continue
+
+        asig_id      = asig['id']
+        curso_origen = asig['curso']        if 'curso'        in a_cols else None
+        cuat_origen  = asig['cuatrimestre'] if 'cuatrimestre' in a_cols else None
+
+        # Fichas docentes
+        ficha = conn.execute(
+            "SELECT creditos, af1, af2, af4, af5, af6 FROM fichas WHERE asignatura_id = ?",
+            (asig_id,)
+        ).fetchone()
+
+        # Grupo para el schedule: primero por grupo_origen, luego el de más clases
+        grupo_id = None
+        if grupo_orig:
+            g = conn.execute("""
+                SELECT g.id, g.curso, g.cuatrimestre FROM grupos g
+                JOIN semanas s ON s.grupo_id = g.id
+                JOIN clases c  ON c.semana_id = s.id
+                JOIN asignaturas a ON a.id = c.asignatura_id
+                WHERE a.codigo = ? AND g.grupo = ? AND c.es_no_lectivo = 0
+                GROUP BY g.id ORDER BY COUNT(*) DESC LIMIT 1
+            """, (codigo, grupo_orig)).fetchone()
+            if g:
+                grupo_id = g[0]
+                if curso_origen is None: curso_origen = g[1]
+                if cuat_origen  is None: cuat_origen  = g[2]
+        if not grupo_id:
+            g = conn.execute("""
+                SELECT g.id, g.curso, g.cuatrimestre FROM grupos g
+                JOIN semanas s ON s.grupo_id = g.id
+                JOIN clases c  ON c.semana_id = s.id
+                JOIN asignaturas a ON a.id = c.asignatura_id
+                WHERE a.codigo = ? AND c.es_no_lectivo = 0
+                GROUP BY g.id ORDER BY COUNT(*) DESC LIMIT 1
+            """, (codigo,)).fetchone()
+            if g:
+                grupo_id = g[0]
+                if curso_origen is None: curso_origen = g[1]
+                if cuat_origen  is None: cuat_origen  = g[2]
+
+        # Schedule comprimido para conflict detection
+        sched = []
+        if grupo_id:
+            clases = conn.execute("""
+                SELECT s.numero AS sem, c.dia, c.franja_id AS fr, f.label AS fl
+                FROM clases c
+                JOIN semanas s ON s.id = c.semana_id
+                JOIN asignaturas a ON a.id = c.asignatura_id
+                JOIN franjas f ON f.id = c.franja_id
+                WHERE s.grupo_id = ? AND a.codigo = ? AND c.es_no_lectivo = 0
+            """, (grupo_id, codigo)).fetchall()
+            sched = [{'sem': r['sem'], 'dia': r['dia'], 'fr': r['fr'], 'fl': r['fl']} for r in clases]
+        schedules[fuente][codigo] = sched
+
+        rows_out.append({
+            **base_row,
+            'nombre':             asig['nombre'] or nombre_csv,
+            'curso_origen':       curso_origen,
+            'cuatrimestre_origen': cuat_origen,
+            'creditos': ficha['creditos'] if ficha else 6,
+            'af1':      ficha['af1']      if ficha else 0,
+            'af2':      ficha['af2']      if ficha else 0,
+            'af4':      ficha['af4']      if ficha else 0,
+            'af5':      ficha['af5']      if ficha else 0,
+            'af6':      ficha['af6']      if ficha else 0,
+            'found': True,
+        })
+
+    for conn in conns.values():
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return {'ok': True, 'rows': rows_out, 'schedules': schedules, 'warnings': warnings}
+
+
 def build_config_dtie(data, src_configs):
     """Genera config.json para el grado DTIE."""
     b  = data['basico']
     ap = data.get('apariencia', {})
     siglas = b['siglas'].upper().strip()
 
+    # ── Estructura desde el payload (paso 3) ────────────────────────────────
+    estructura = data.get('estructura', {})
+    est_cursos = estructura.get('cursos', [])
+
+    # Si no hay estructura definida, derivarla de la distribución (compatibilidad)
     dist = data['distribucion']
-    cuats_por_curso = {}
-    for d in dist:
-        c = str(int(d['curso_dtie']))
-        q = d['cuatrimestre']
-        cuats_por_curso.setdefault(c, set()).add(q)
+    if est_cursos:
+        grupos_por_curso = {}
+        for i, c in enumerate(est_cursos, start=1):
+            cs = str(i)
+            grupos_por_curso[cs] = {
+                '1C': max(0, int(c.get('g1c', 1))),
+                '2C': max(0, int(c.get('g2c', 1))),
+            }
+        num_cursos = len(est_cursos)
+    else:
+        # Fallback: un grupo por (curso, cuatrimestre) existente en la distribución
+        cuats_por_curso = {}
+        for d in dist:
+            c = str(int(d['curso_dtie']))
+            q = d['cuatrimestre']
+            cuats_por_curso.setdefault(c, set()).add(q)
+        grupos_por_curso = {}
+        for c, cuats in cuats_por_curso.items():
+            grupos_por_curso[c] = {
+                '1C': 1 if '1C' in cuats else 0,
+                '2C': 1 if '2C' in cuats else 0,
+            }
+        num_cursos = len(cuats_por_curso)
 
-    grupos_por_curso = {}
-    for c, cuats in cuats_por_curso.items():
-        grupos_por_curso[c] = {
-            '1C': 1 if '1C' in cuats else 0,
-            '2C': 1 if '2C' in cuats else 0,
-        }
+    # Índice del grado principal (A=0, B=1)
+    principal_idx = 1 if data.get('grado_principal', 'a') == 'b' else 0
 
-    # Franjas de la config A (si disponible)
+    # Franjas del grado principal (si disponible)
     franjas = []
-    if src_configs and src_configs[0]:
-        franjas = src_configs[0].get('degree_structure', {}).get('franjas', [])
+    if src_configs and len(src_configs) > principal_idx and src_configs[principal_idx]:
+        franjas = src_configs[principal_idx].get('degree_structure', {}).get('franjas', [])
 
-    # Activity types heredados de fuente A
+    # Activity types heredados del grado principal
     activity_types = {}
-    if src_configs and src_configs[0]:
-        activity_types = src_configs[0].get('activity_types', {})
+    if src_configs and len(src_configs) > principal_idx and src_configs[principal_idx]:
+        activity_types = src_configs[principal_idx].get('activity_types', {})
     if not activity_types:
         activity_types = {
             'AF1': {'label': 'Teoría', 'aula_exact': [''], 'aula_startswith': []},
@@ -1164,9 +1923,17 @@ def build_config_dtie(data, src_configs):
     for i, f in enumerate(data.get('fuentes', [])):
         fuentes_info.append({'db_path': f['db_path'], 'grado_nombre': f.get('grado_nombre', '')})
 
+    degree_structure = {
+        'num_cursos':        num_cursos,
+        'num_semanas':       16,
+        'grupos_por_curso':  grupos_por_curso,
+        'franjas':           franjas,
+    }
+
     return {
         '_comment': f'Configuración DTIE — {siglas} (generado por nuevo_dtie.py)',
         'dtie': True,
+        'dtie_grado_principal': data.get('grado_principal', 'a'),
         'dtie_fuentes': fuentes_info,
         'institution': {
             'name':     b.get('institucion', ''),
@@ -1180,12 +1947,7 @@ def build_config_dtie(data, src_configs):
             'db_name':     'horarios.db',
             'curso_label': b.get('curso_label', ''),
         },
-        'degree_structure': {
-            'num_cursos':       len(grupos_por_curso),
-            'num_semanas':      16,
-            'grupos_por_curso': grupos_por_curso,
-            'franjas':          franjas,
-        },
+        'degree_structure': degree_structure,
         'branding': {
             'primary':       ap.get('primary', '#6b1a3a'),
             'primary_light': ap.get('primary_light', '#8b2a52'),
@@ -1368,7 +2130,8 @@ def api_crear_dtie(data):
         create_tables_dtie(dtie_conn)
 
         log('Copiando datos de origen…', 'info')
-        conflicts = generar_dtie_db(dtie_conn, src_conns, distribucion, log)
+        estructura = data.get('estructura', {})
+        conflicts = generar_dtie_db(dtie_conn, src_conns, distribucion, estructura, log)
 
         dtie_conn.close()
         conn_a.close()
@@ -1427,6 +2190,20 @@ class DtieHandler(BaseHTTPRequestHandler):
             self._json({'ok': True})
         elif self.path == '/api/grados':
             self._json(api_grados())
+        elif self.path == '/api/titulaciones':
+            tit_path = BASE_DIR / 'config' / 'titulaciones.json'
+            if tit_path.exists():
+                self._json(json.loads(tit_path.read_text('utf-8')))
+            else:
+                self._json([])
+        elif self.path == '/api/csvs_dtie':
+            self._json(api_csvs_dtie())
+        elif self.path == '/api/classrooms':
+            cl_path = BASE_DIR / 'config' / 'classrooms.json'
+            if cl_path.exists():
+                self._json(json.loads(cl_path.read_text('utf-8')))
+            else:
+                self._json([])
         elif self.path == '/api/logo_svg':
             self._serve_file(BASE_DIR / 'docs' / 'logo_janux.svg', 'image/svg+xml')
         else:
@@ -1438,6 +2215,8 @@ class DtieHandler(BaseHTTPRequestHandler):
             self._json(api_leer_dtie(data))
         elif self.path == '/api/crear_dtie':
             self._json(api_crear_dtie(data))
+        elif self.path == '/api/resolver_csv_dtie':
+            self._json(api_resolver_csv_dtie(data))
         else:
             self._404()
 

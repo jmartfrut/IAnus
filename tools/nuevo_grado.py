@@ -213,17 +213,17 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
   <div class="row2">
     <div class="field">
       <label>Nombre de la institución</label>
-      <input type="text" id="b-inst" placeholder="Universidad Politécnica de Cartagena">
+      <input type="text" id="b-inst" placeholder="Universidad Politécnica de Cartagena" value="Universidad Politécnica de Cartagena">
     </div>
     <div class="field">
       <label>Siglas de la institución</label>
-      <input type="text" id="b-inst-siglas" placeholder="UPCT" maxlength="10">
+      <input type="text" id="b-inst-siglas" placeholder="UPCT" value="UPCT" maxlength="10">
     </div>
   </div>
   <div class="row3">
     <div class="field">
       <label>Etiqueta de curso</label>
-      <input type="text" id="b-curso-label" placeholder="2025-2026">
+      <input type="text" id="b-curso-label" placeholder="2026-2027" value="2026-2027">
     </div>
     <div class="field">
       <label>Puerto del servidor</label>
@@ -1580,9 +1580,11 @@ def api_crear(data):
 try:
     from nuevo_dtie import (
         WIZARD_HTML as DTIE_HTML,
-        api_grados       as dtie_api_grados,
-        api_leer_dtie    as dtie_api_leer_dtie,
-        api_crear_dtie   as dtie_api_crear_dtie,
+        api_grados            as dtie_api_grados,
+        api_leer_dtie         as dtie_api_leer_dtie,
+        api_crear_dtie        as dtie_api_crear_dtie,
+        api_csvs_dtie         as dtie_api_csvs_dtie,
+        api_resolver_csv_dtie as dtie_api_resolver_csv_dtie,
     )
     _DTIE_AVAILABLE = True
 except ImportError:
@@ -1684,6 +1686,8 @@ class WizardHandler(BaseHTTPRequestHandler):
             self._svg(BASE_DIR / 'docs' / 'logo_janux.svg')
         elif self.path == '/api/grados':
             self._json(dtie_api_grados() if _DTIE_AVAILABLE else {'grados': []})
+        elif self.path == '/api/csvs_dtie':
+            self._json(dtie_api_csvs_dtie() if _DTIE_AVAILABLE else {'csvs': []})
         elif self.path == '/api/tipos_actividad':
             tipos_path = BASE_DIR / 'config' / 'tipos_actividad.json'
             if tipos_path.exists():
@@ -1721,6 +1725,9 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/crear_dtie' and _DTIE_AVAILABLE:
             data = self._read_json()
             self._json(dtie_api_crear_dtie(data))
+        elif self.path == '/api/resolver_csv_dtie' and _DTIE_AVAILABLE:
+            data = self._read_json()
+            self._json(dtie_api_resolver_csv_dtie(data))
         else:
             self._404()
 

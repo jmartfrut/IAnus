@@ -390,7 +390,8 @@ def create_tables(conn):
             af3           INTEGER DEFAULT 0,
             af4           INTEGER DEFAULT 0,
             af5           INTEGER DEFAULT 0,
-            af6           INTEGER DEFAULT 0
+            af6           INTEGER DEFAULT 0,
+            cuatrimestre  TEXT DEFAULT NULL
         );
         CREATE TABLE IF NOT EXISTS festivos_calendario (
             fecha       TEXT PRIMARY KEY,

@@ -203,21 +203,29 @@ def _m09_comentarios_horario(conn, **ctx):
     """)
 
 
+def _m10_fichas_cuatrimestre(conn, **ctx):
+    """Añade columna 'cuatrimestre' a fichas (NULL=normal, 'A'=anual → divide AFs por 2 por cuatrimestre)."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(fichas)").fetchall()}
+    if "cuatrimestre" not in cols:
+        conn.execute("ALTER TABLE fichas ADD COLUMN cuatrimestre TEXT DEFAULT NULL")
+
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
 MIGRATIONS = [
-    (1, "Añade columna 'tipo' a clases y migra datos del campo aula",          _m01_tipo_clases),
-    (2, "Añade columna 'af_cat' a clases",                                     _m02_af_cat_clases),
-    (3, "Añade columna 'af3' a fichas",                                        _m03_af3_fichas),
-    (4, "Migra fichas_override a clave compuesta (codigo, grupo_key)",          _m04_fichas_override_composite_pk),
-    (5, "Crea festivos_calendario y migra no-lectivos desde clases",           _m05_festivos_calendario),
-    (6, "Crea examenes_finales con columna auto_generated",                    _m06_examenes_finales),
-    (7, "Crea finales_excluidas con clave (periodo, curso, asig_codigo)",      _m07_finales_excluidas),
-    (8, "Crea/actualiza asignaturas_destacadas con act_type y subgrupo",       _m08_asignaturas_destacadas),
-    (9, "Crea tabla comentarios_horario",                                      _m09_comentarios_horario),
+    (1,  "Añade columna 'tipo' a clases y migra datos del campo aula",          _m01_tipo_clases),
+    (2,  "Añade columna 'af_cat' a clases",                                     _m02_af_cat_clases),
+    (3,  "Añade columna 'af3' a fichas",                                        _m03_af3_fichas),
+    (4,  "Migra fichas_override a clave compuesta (codigo, grupo_key)",          _m04_fichas_override_composite_pk),
+    (5,  "Crea festivos_calendario y migra no-lectivos desde clases",            _m05_festivos_calendario),
+    (6,  "Crea examenes_finales con columna auto_generated",                     _m06_examenes_finales),
+    (7,  "Crea finales_excluidas con clave (periodo, curso, asig_codigo)",       _m07_finales_excluidas),
+    (8,  "Crea/actualiza asignaturas_destacadas con act_type y subgrupo",        _m08_asignaturas_destacadas),
+    (9,  "Crea tabla comentarios_horario",                                       _m09_comentarios_horario),
+    (10, "Añade columna 'cuatrimestre' a fichas (A=anual, divide AFs por 2)",   _m10_fichas_cuatrimestre),
     # ── Próximas migraciones aquí ─────────────────────────────────────────────
-    # (10, "Descripción del cambio",  _m10_nueva_funcion),
+    # (11, "Descripción del cambio",  _m11_nueva_funcion),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

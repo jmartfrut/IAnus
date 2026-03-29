@@ -817,12 +817,16 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
 
   const tbody = allAsigs.map(a => {
     const f = a.fichas;  // datos de fichas (puede ser null)
-    const espAf1  = f ? f.af1  : null;
-    const espAf2  = f ? f.af2  : null;
-    const espAf3  = f ? (f.af3 || 0) : null;
-    const espAf4  = f ? f.af4  : null;
-    const espAf5  = f ? f.af5  : null;
-    const espAf6  = f ? f.af6  : null;
+    // Para asignaturas anuales (cuatrimestre='A') la ficha refleja el curso completo.
+    // Al mostrar estadísticas para un cuatrimestre específico, se divide por 2.
+    const isAnual = f && f.cuatrimestre === 'A';
+    const afDiv   = isAnual ? 2 : 1;
+    const espAf1  = f ? Math.round(f.af1 / afDiv)        : null;
+    const espAf2  = f ? Math.round(f.af2 / afDiv)        : null;
+    const espAf3  = f ? Math.round((f.af3 || 0) / afDiv) : null;
+    const espAf4  = f ? Math.round(f.af4 / afDiv)        : null;
+    const espAf5  = f ? Math.round(f.af5 / afDiv)        : null;
+    const espAf6  = f ? Math.round(f.af6 / afDiv)        : null;
     // Total real presencial (sesiones × 2h): AF1+AF2+AF3+AF4+AF5 (sin AF6 — examen final no suma al total)
     const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
     const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
@@ -860,7 +864,7 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
 
     // Total: todos los bloques presenciales (incluyendo AF5+AF6 ahora contabilizados)
     const presReal = totalReal;
-    const presEsp  = f ? (f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5) : null;  // AF1+AF2+AF3+AF4+AF5 (AF6 excluido del total)
+    const presEsp  = f ? (espAf1 + espAf2 + espAf3 + espAf4 + espAf5) : null;  // AF1+AF2+AF3+AF4+AF5 (AF6 excluido del total; anuales ya ÷2)
     const totalOk  = (presEsp === null) || (presReal === presEsp);
 
     // ¿Algún error en la asignatura? AF6 excluido del chequeo (es solo referencia)
@@ -932,9 +936,13 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
       statusBadge = '<span class="ficha-ok-badge">&#10003; OK ficha</span>';
     }
 
+    const anualBadge = isAnual
+      ? '<span class="anual-badge" title="Asignatura anual: las AFs de la ficha se dividen por 2 al comparar por cuatrimestre">&#128197; Anual (&divide;2)</span>'
+      : '';
+
     return `<tr style="${rowErrStyle}">
       <td class="act-asig-name" style="${nameStyle}">
-        <strong>${a.nombre}</strong><br>
+        <strong>${a.nombre}</strong>${anualBadge}<br>
         <span class="act-code">[${a.codigo}]</span>
         ${statusBadge}${overrideBtn}
       </td>
@@ -1294,12 +1302,12 @@ function renderFinales() {
     <button class="btn-reset-auto" id="btnResetAuto" onclick="resetAutoExams()">
       &#10006; Reset autom&aacute;tico
     </button>
+    <button class="btn-reset-manual" id="btnResetManual" onclick="resetManualExams()">
+      &#128465; Clear
+    </button>
     <button class="btn-export-pdf" id="btnExportFinalPdf" onclick="exportFinalesPdf()">
       &#128438; Exportar PDF
     </button>
-    <span style="font-size:.75rem;color:var(--text-light)">
-      Las asignaturas a&ntilde;adidas manualmente no se modifican
-    </span>
   </div>`;
 
   // ── Panel de conflictos ──
@@ -1379,6 +1387,9 @@ function renderFinales() {
           const badge   = hasCfl ? `<span class="parc-conflict-badge">&#9888;</span>` : '';
           const autoBadge = isAuto ? ` <span class="final-auto-badge" title="Colocado autom\u00e1ticamente">&#9881;</span>` : '';
           cellHtml += `<div class="final-entry ${entryBg[curso]}${hasCfl?' conflict-entry':''}${isAuto?' auto-entry':''}"
+            draggable="true"
+            ondragstart="startDragFinal(event,${e.id})"
+            ondragend="endDragFinal(event)"
             onclick="event.stopPropagation();openFinalEdit(${e.id},'${iso}','${curso}')">
             <span class="final-turno ${turnoCls(turno)}">${turnoStr(turno)}</span>
             <span class="final-name">${_escHtml(e.asig_nombre||'\u2014')}${badge}${autoBadge}</span>
@@ -1388,7 +1399,10 @@ function renderFinales() {
         cellHtml += `<div class="final-add-btn" onclick="openFinalAdd('${iso}','${curso}')">+ a&ntilde;adir</div>`;
 
         const cflStyle = cellConflict ? 'style="outline:3px solid #f59e0b;outline-offset:-2px;background:#fffbeb"' : '';
-        html += `<td class="final-cell" ${cflStyle}>${cellHtml}</td>`;
+        html += `<td class="final-cell" ${cflStyle}
+          ondragover="dragOverFinalCell(event)"
+          ondragleave="dragLeaveFinalCell(event)"
+          ondrop="dropFinalExam(event,'${iso}')">${cellHtml}</td>`;
       }
       html += `</tr>`;
     });
@@ -1544,15 +1558,20 @@ function _getSlot(dayUsage, iso, curso) {
   return null; // día lleno (o sábado con mañana ya ocupada)
 }
 
-/* Algoritmo de distribución óptima (máxima separación mínima + búsqueda binaria):
-   1. Calcula posiciones ideales maximizando el hueco mínimo por curso.
-   2. Procesa los exámenes intercalando cursos (por posición ideal).
-   3. Para cada examen, busca el día más cercano a la ideal que cumpla TODAS las restricciones:
-      - No cursos consecutivos el mismo día.
-      - No sábados por la tarde.
-      - No exámenes en días consecutivos para el mismo curso (≥ 2 días de diferencia). */
-function _runDistribution(allDays, subsByCurso, dayUsage) {
-  const cursos = ['1','2','3','4'];
+/* Algoritmo de distribución óptima — orden de prioridad por curso + relajación progresiva.
+   Devuelve { placements, unplaced } donde unplaced = items que no cupieron.
+
+   Restricción fuerte de días: un curso no puede tener más de 3 exámenes en días
+   consecutivos seguidos. En la pasada ultra-relajada (skipConsec=true) esta
+   restricción se ignora como último recurso.
+
+   allowRelaxed = false (enero/junio): solo pasada estricta para todos los cursos.
+     Si no cabe → unplaced con aviso; NO se relajan restricciones.
+   allowRelaxed = true  (julio/extraordinario): relajación progresiva por grupos:
+     Grupo A — 1º y 2º: estricta primero; si no cabe → semi-relajada.
+     Grupo B — 4º: semi-relajada; si no cabe → ultra-relajada.
+     Grupo C — 3º: ultra-relajada directamente (consecutivo de 2º y 4º). */
+function _runDistribution(allDays, subsByCurso, dayUsage, allowRelaxed) {
   const result = [];
 
   // Días ya asignados por curso (manual + auto en construcción), para control de días consecutivos
@@ -1562,51 +1581,117 @@ function _runDistribution(allDays, subsByCurso, dayUsage) {
     if (usage.t) { const c = String(usage.t); if (daysByCurso[c]) daysByCurso[c].push(iso); }
   }
 
-  // Posiciones ideales por curso y construcción de items
-  const items = [];
-  for (const curso of cursos) {
-    const subs = subsByCurso[curso] || [];
-    if (!subs.length) continue;
-    const pos = _idealPositions(allDays, subs.length);
-    subs.forEach((sub, i) => items.push({
-      curso, nom: sub.nom, cod: sub.cod || '',
-      idealIdx: pos[i] !== undefined ? pos[i] : Math.floor(allDays.length / 2)
-    }));
-  }
+  /* ¿Colocar un examen en 'iso' para 'curso' crearía una racha de >3 días consecutivos?
+     Las fechas ISO ordenan léxicamente igual que cronológicamente (YYYY-MM-DD). */
+  const hasMaxConsecExceeded = (curso, iso) => {
+    const sorted = [...daysByCurso[curso], iso].sort();
+    let streak = 1;
+    for (let i = 1; i < sorted.length; i++) {
+      streak = _daysBetween(sorted[i-1], sorted[i]) === 1 ? streak + 1 : 1;
+      if (streak > 3) return true;
+    }
+    return false;
+  };
 
-  // Ordenar por posición ideal, con interleaving de cursos como desempate
-  items.sort((a, b) => a.idealIdx - b.idealIdx || a.curso.localeCompare(b.curso));
+  /* Versión semi-relajada: permite cursos consecutivos en turnos distintos.
+     Prioriza el turno sin curso consecutivo; ambos ocupados → null. */
+  const _getSlotSemiRelaxed = (iso, curso) => {
+    const day = dayUsage[iso] || { m: null, t: null };
+    const consec = { '1':['2'], '2':['1','3'], '3':['2','4'], '4':['3'] };
+    if (String(day.m) === curso || String(day.t) === curso) return null;
+    const mHasConsec = day.m && (consec[curso]||[]).includes(String(day.m));
+    const tHasConsec = day.t && (consec[curso]||[]).includes(String(day.t));
+    if (!day.m && !mHasConsec) return 'mañana';
+    if (!day.t && !_isSaturday(iso) && !tHasConsec) return 'tarde';
+    if (!day.m) return 'mañana';
+    if (!day.t && !_isSaturday(iso)) return 'tarde';
+    return null;
+  };
 
-  // ¿El día 'iso' viola la restricción de días consecutivos para 'curso'?
-  const hasConsecConflict = (curso, iso) =>
-    daysByCurso[curso].some(d => Math.abs(_daysBetween(d, iso)) < 2);
+  /* Construye y ordena items por posición ideal para un conjunto de cursos. */
+  const buildItems = (cursos) => {
+    const items = [];
+    for (const curso of cursos) {
+      const subs = subsByCurso[curso] || [];
+      if (!subs.length) continue;
+      const pos = _idealPositions(allDays, subs.length);
+      subs.forEach((sub, i) => items.push({
+        curso, nom: sub.nom, cod: sub.cod || '',
+        idealIdx: pos[i] !== undefined ? pos[i] : Math.floor(allDays.length / 2)
+      }));
+    }
+    items.sort((a, b) => a.idealIdx - b.idealIdx || a.curso.localeCompare(b.curso));
+    return items;
+  };
 
-  for (const item of items) {
-    let placed = false;
-    for (let off = 0; off < allDays.length && !placed; off++) {
+  /* Intenta colocar item con slotFn.
+     skipConsec = true ignora la restricción de máx. 3 días consecutivos (último recurso).
+     Devuelve true si se colocó. */
+  const tryPlace = (item, slotFn, pass, skipConsec) => {
+    for (let off = 0; off < allDays.length; off++) {
       const candidates = off === 0 ? [item.idealIdx] : [item.idealIdx + off, item.idealIdx - off];
       for (const idx of candidates) {
         if (idx < 0 || idx >= allDays.length) continue;
         const iso = allDays[idx];
-        // Restricción: no días consecutivos para el mismo curso
-        if (hasConsecConflict(item.curso, iso)) continue;
-        // El mismo curso no puede tener dos exámenes el mismo día
+        if (!skipConsec && hasMaxConsecExceeded(item.curso, iso)) continue;
         const day = dayUsage[iso] || { m: null, t: null };
         if (String(day.m) === item.curso || String(day.t) === item.curso) continue;
-        const slot = _getSlot(dayUsage, iso, item.curso);
+        const slot = slotFn(iso, item.curso);
         if (slot !== null) {
           if (!dayUsage[iso]) dayUsage[iso] = { m: null, t: null };
           dayUsage[iso][slot === 'mañana' ? 'm' : 't'] = item.curso;
           daysByCurso[item.curso].push(iso);
-          result.push({ fecha: iso, curso: item.curso, asig_nombre: item.nom, asig_codigo: item.cod || '', turno: slot });
-          placed = true;
-          break;
+          const realCod = (item.cod || '').split(':')[0];
+          result.push({ fecha: iso, curso: item.curso, asig_nombre: item.nom, asig_codigo: realCod, turno: slot, _pass: pass });
+          return true;
         }
       }
     }
-    if (!placed) console.warn(`[Finales] No se pudo colocar: ${item.curso}º - ${item.nom}`);
+    return false;
+  };
+
+  const unplaced = [];
+  const strict = (iso, c) => _getSlot(dayUsage, iso, c);
+
+  if (!allowRelaxed) {
+    // ── Enero / Junio: un único intento estricto para todos los cursos ────────
+    for (const item of buildItems(['1', '2', '4', '3'])) {
+      const ok = tryPlace(item, strict, 1, false);
+      if (!ok) unplaced.push(item);
+    }
+  } else {
+    // ── Julio (extraordinario): relajación progresiva por grupos ─────────────
+
+    // Grupo A: 1º y 2º — estricta primero, semi-relajada como fallback
+    const failedA = [];
+    for (const item of buildItems(['1', '2'])) {
+      const ok = tryPlace(item, strict, 1, false);
+      if (!ok) failedA.push(item);
+    }
+    for (const item of failedA) {
+      const ok = tryPlace(item, _getSlotSemiRelaxed, 2, false);
+      if (!ok) unplaced.push(item);
+    }
+
+    // Grupo B: 4º — semi-relajada, ultra-relajada como fallback
+    const failedB = [];
+    for (const item of buildItems(['4'])) {
+      const ok = tryPlace(item, _getSlotSemiRelaxed, 2, false);
+      if (!ok) failedB.push(item);
+    }
+    for (const item of failedB) {
+      const ok = tryPlace(item, _getSlotSemiRelaxed, 3, true);
+      if (!ok) unplaced.push(item);
+    }
+
+    // Grupo C: 3º — ultra-relajada directamente
+    for (const item of buildItems(['3'])) {
+      const ok = tryPlace(item, _getSlotSemiRelaxed, 3, true);
+      if (!ok) unplaced.push(item);
+    }
   }
-  return result;
+
+  return { placements: result, unplaced };
 }
 
 async function autoDistributeExams() {
@@ -1658,16 +1743,29 @@ async function autoDistributeExams() {
     await api('/api/finales/reset-auto', { fecha_inicio: period.start, fecha_fin: period.end });
 
     // 7. Ejecutar algoritmo
-    const placements = _runDistribution(allDays, subsByCurso, dayUsage);
+    // En enero (1) y junio (2) no se relajan restricciones; solo en julio (3).
+    const allowRelaxed = currentFinalPeriod === '3';
+    const { placements, unplaced } = _runDistribution(allDays, subsByCurso, dayUsage, allowRelaxed);
 
     // 8. Guardar en bloque
     if (placements.length > 0) {
+      const pass2Count = placements.filter(p => p._pass === 2).length;
+      const pass3Count = placements.filter(p => p._pass === 3).length;
       const res = await api('/api/finales/batch-set', {
-        exams: placements.map(p => ({ ...p, auto_generated: 1, observacion: '' }))
+        exams: placements.map(({ _pass, ...p }) => ({ ...p, auto_generated: 1, observacion: '' }))
       });
-      showToast(`${res.inserted} ex\u00e1menes distribuidos \u2714`);
+      let msg = `${res.inserted} ex\u00e1menes distribuidos \u2714`;
+      if (pass2Count > 0) msg += ` \u00b7 ${pass2Count} con curso consecutivo (distinto turno)`;
+      if (pass3Count > 0) msg += ` \u00b7 ${pass3Count} sin separaci\u00f3n entre d\u00edas`;
+      showToast(msg);
     } else {
       showToast('No hay asignaturas pendientes de colocar');
+    }
+
+    // 9. Avisar explícitamente de los que no se pudieron colocar
+    if (unplaced.length > 0) {
+      const lines = unplaced.map(u => `  \u2022 ${u.curso}\u00ba curso \u2014 ${u.nom}`).join('\n');
+      alert(`\u26A0\uFE0F ${unplaced.length} ex\u00e1men(es) sin colocar por falta de slots disponibles:\n\n${lines}\n\nA\u00f1\u00e1delos manualmente o revisa el per\u00edodo de ex\u00e1menes en config.json.`);
     }
     await loadFinales();
   } catch(e) {
@@ -1690,6 +1788,22 @@ async function resetAutoExams() {
     showToast(`${res.deleted} ex\u00e1menes autom\u00e1ticos eliminados \u2714`);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '&#10006; Reset autom\u00e1tico'; }
+  }
+}
+
+async function resetManualExams() {
+  const btn = document.getElementById('btnResetManual');
+  if (!confirm('¿Eliminar TODOS los exámenes del período (manuales y automáticos)?\nEsta acción no se puede deshacer.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Eliminando…'; }
+  try {
+    const period = getFinalesPeriods()[currentFinalPeriod];
+    const res = await api('/api/finales/reset-manual', {
+      fecha_inicio: period.start, fecha_fin: period.end
+    });
+    await loadFinales();
+    showToast(`${res.deleted} ex\u00e1men(es) eliminados \u2714`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128465; Clear'; }
   }
 }
 
@@ -1730,8 +1844,12 @@ function openFinalEdit(id, iso, curso) {
   _openFinalPopup(id, iso, curso, e.asig_nombre||'', e.asig_codigo||'', e.turno||'mañana', e.observacion||'');
 }
 
-/* Construye un mapa curso -> Map(codigo->nombre).
-   cuat = '1C' | '2C' | null  (null = ambos cuatrimestres) */
+/* Construye un mapa curso -> Map(key->nombre).
+   cuat = '1C' | '2C' | null  (null = ambos cuatrimestres, periodo Extraordinario).
+   Para asignaturas anuales (fichas.cuatrimestre === 'A') en periodo Extraordinario:
+   se generan dos entradas con claves '508103004:1C' / '508103004:2C' y nombres
+   'NOMBRE (1C)' / 'NOMBRE (2C)', de modo que aparecen dos veces en el checklist
+   y en la distribución automática. El código real se extrae stripeando el sufijo. */
 function _getAsigsByCursoCuat(cuat) {
   const map = {};
   for (const grupo of Object.values(DB.grupos || {})) {
@@ -1742,6 +1860,21 @@ function _getAsigsByCursoCuat(cuat) {
       for (const cls of sem.clases || [])
         if (cls.asig_codigo && cls.asig_nombre && !cls.es_no_lectivo)
           map[c].set(cls.asig_codigo, cls.asig_nombre);
+  }
+  // Periodo Extraordinario (cuat === null): duplicar asignaturas anuales en 1C + 2C
+  if (cuat === null) {
+    for (const c of Object.keys(map)) {
+      const expanded = new Map();
+      for (const [cod, nom] of map[c]) {
+        if ((DB.fichas?.[cod]?.cuatrimestre) === 'A') {
+          expanded.set(cod + ':1C', nom + ' (1C)');
+          expanded.set(cod + ':2C', nom + ' (2C)');
+        } else {
+          expanded.set(cod, nom);
+        }
+      }
+      map[c] = expanded;
+    }
   }
   return map;
 }
@@ -2355,6 +2488,68 @@ async function dropClase(event, dia, franjaId) {
   else          showToast('→ Clase movida');
   await loadData();
 }
+
+// ─── DRAG & DROP — FINALES ────────────────────────────────────────────────────
+let _dragFinalId = null;
+
+function startDragFinal(event, examId) {
+  _dragFinalId = examId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(examId));
+  const card = event.currentTarget;
+  setTimeout(() => card.classList.add('dragging'), 0);
+  event.stopPropagation();
+}
+
+function endDragFinal(event) {
+  event.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.final-cell.drag-over-final').forEach(el =>
+    el.classList.remove('drag-over-final')
+  );
+}
+
+function dragOverFinalCell(event) {
+  if (_dragFinalId === null) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  const td = event.currentTarget;
+  document.querySelectorAll('.final-cell.drag-over-final').forEach(el => {
+    if (el !== td) el.classList.remove('drag-over-final');
+  });
+  td.classList.add('drag-over-final');
+}
+
+function dragLeaveFinalCell(event) {
+  if (!event.currentTarget.contains(event.relatedTarget))
+    event.currentTarget.classList.remove('drag-over-final');
+}
+
+async function dropFinalExam(event, iso) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over-final');
+  const examId = _dragFinalId;
+  _dragFinalId = null;
+  if (!examId) return;
+
+  const exam = FINALES_DATA.find(f => f.id === examId);
+  if (!exam || exam.fecha === iso) return; // misma celda, nada que hacer
+
+  const res = await api('/api/finales/set', {
+    id:           examId,
+    fecha:        iso,
+    curso:        exam.curso,
+    asig_nombre:  exam.asig_nombre,
+    asig_codigo:  exam.asig_codigo || '',
+    turno:        exam.turno || 'mañana',
+    observacion:  exam.observacion || '',
+    action:       'set'
+  });
+  if (res.error) { showToast('Error al mover: ' + res.error, true); return; }
+  showToast('\u2192 Ex\u00e1men movido');
+  await loadFinales();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function openEdit(claseId) {
   const week = getCurrentWeek();

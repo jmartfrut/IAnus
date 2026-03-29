@@ -19,7 +19,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.15.1"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -226,8 +226,11 @@ def api_get_all(params):
         ).fetchall()
 
     # Fichas desde la BD (tabla fichas, joineada con asignaturas)
-    fichas_rows = conn.execute("""
-        SELECT a.codigo, f.creditos, f.af1, f.af2, f.af3, f.af4, f.af5, f.af6
+    fichas_cols = {r["name"] for r in conn.execute("PRAGMA table_info(fichas)").fetchall()}
+    _cuat_col = "f.cuatrimestre" if "cuatrimestre" in fichas_cols else "NULL as cuatrimestre"
+    fichas_rows = conn.execute(f"""
+        SELECT a.codigo, f.creditos, f.af1, f.af2, f.af3, f.af4, f.af5, f.af6,
+               {_cuat_col}
         FROM fichas f
         JOIN asignaturas a ON a.id = f.asignatura_id
     """).fetchall()
@@ -236,6 +239,7 @@ def api_get_all(params):
             "creditos": r["creditos"],
             "af1": r["af1"], "af2": r["af2"], "af3": r["af3"],
             "af4": r["af4"], "af5": r["af5"], "af6": r["af6"],
+            "cuatrimestre": r["cuatrimestre"],
         }
         for r in fichas_rows
     }
@@ -849,6 +853,23 @@ def api_reset_auto_finales(data):
     return {'ok': True, 'deleted': res.rowcount}
 
 
+def api_reset_manual_finales(data):
+    """POST /api/finales/reset-manual — elimina TODOS los exámenes (manual + auto) de un rango."""
+    conn        = get_db()
+    fecha_ini   = (data.get('fecha_inicio') or '').strip()
+    fecha_fin   = (data.get('fecha_fin')    or '').strip()
+    if not fecha_ini or not fecha_fin:
+        conn.close()
+        return {'error': 'fecha_inicio y fecha_fin requeridos'}
+    res = conn.execute(
+        "DELETE FROM examenes_finales WHERE fecha>=? AND fecha<=?",
+        (fecha_ini, fecha_fin)
+    )
+    conn.commit()
+    conn.close()
+    return {'ok': True, 'deleted': res.rowcount}
+
+
 def ensure_destacadas_table():
     """Crea la tabla asignaturas_destacadas si no existe.
     Almacena tuplas (codigo, grupo_num, act_type, subgrupo) para resaltar
@@ -1121,6 +1142,7 @@ API_ROUTES = {
     "/api/finales/set":              ("POST", api_set_final),
     "/api/finales/batch-set":        ("POST", api_batch_set_finales),
     "/api/finales/reset-auto":       ("POST", api_reset_auto_finales),
+    "/api/finales/reset-manual":     ("POST", api_reset_manual_finales),
     "/api/finales/checklist":        ("GET",  api_get_finales_checklist),
     "/api/finales/checklist/toggle": ("POST", api_toggle_finales_checklist),
     "/api/db/info":                  ("GET",  api_db_info),
