@@ -241,6 +241,34 @@ def _m13_fix_comentarios_stamp(conn, **ctx):
     """)
 
 
+def _m14_rename_grupo_unico(conn, **ctx):
+    """Renombra el valor 'unico' → '1' en la tabla grupos y actualiza todas las
+    referencias derivadas (clave, comentarios_horario, fichas_override,
+    asignaturas_destacadas).  BDs con múltiples grupos no se ven afectadas."""
+    # 1. grupos: grupo='unico' → '1', clave='..._grupo_unico' → '..._grupo_1'
+    conn.execute("UPDATE grupos SET grupo='1' WHERE grupo='unico'")
+    conn.execute(
+        "UPDATE grupos SET clave=REPLACE(clave,'_grupo_unico','_grupo_1') "
+        "WHERE clave LIKE '%_grupo_unico'"
+    )
+    # 2. comentarios_horario: grupo_key usa el mismo patrón '..._grupo_unico'
+    conn.execute(
+        "UPDATE comentarios_horario "
+        "SET grupo_key=REPLACE(grupo_key,'_grupo_unico','_grupo_1') "
+        "WHERE grupo_key LIKE '%_grupo_unico'"
+    )
+    # 3. fichas_override: grupo_key con el mismo patrón
+    conn.execute(
+        "UPDATE fichas_override "
+        "SET grupo_key=REPLACE(grupo_key,'_grupo_unico','_grupo_1') "
+        "WHERE grupo_key LIKE '%_grupo_unico'"
+    )
+    # 4. asignaturas_destacadas: grupo_num='unico' → '1'
+    conn.execute(
+        "UPDATE asignaturas_destacadas SET grupo_num='1' WHERE grupo_num='unico'"
+    )
+
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -258,8 +286,7 @@ MIGRATIONS = [
     (11, "Añade columna 'modo' a asignaturas_destacadas (1=color+badge, 2=solo badge)", _m11_destacadas_modo),
     (12, "Re-garantiza columna 'af_cat' en clases (fix stamp sin columna)",     _m12_fix_af_cat_stamp),
     (13, "Crea comentarios_horario si no existe (fix stamp sin tabla)",         _m13_fix_comentarios_stamp),
-    # ── Próximas migraciones aquí ─────────────────────────────────────────────
-    # (14, "Descripción del cambio",  _m14_nueva_funcion),
+    (14, "Renombra grupo 'unico' → '1' en grupos y tablas relacionadas",        _m14_rename_grupo_unico),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

@@ -25,6 +25,13 @@ if not defined PYTHON_CMD (
     pause
     exit /b 1
 )
+REM Verificar e instalar dependencias Python (openpyxl necesario para importar Excel)
+echo [INFO] Verificando dependencias...
+%PYTHON_CMD% -m pip install -r requirements.txt --quiet 2>nul
+if errorlevel 1 (
+    echo [AVISO] No se pudieron instalar algunas dependencias. Continuando...
+)
+
 echo [INFO] Arrancando asistente en http://localhost:8092 ...
 %PYTHON_CMD% tools\nuevo_grado.py
 pause

@@ -31,12 +31,12 @@ _SUBJECT_RE = re.compile(r'^\[(\d+)\]\s*(.+?)(?:\s*\|(.*))?$', re.DOTALL)
 _SEMANA_RE  = re.compile(r'SEMANA\s+(\d+)', re.IGNORECASE)
 _FRANJA_RE  = re.compile(r'^\d{1,2}:\d{2}')
 
-# Normalización de días (con/sin tilde → sin tilde, coherente con setup_grado.py)
+# Normalización de días (con/sin tilde → con tilde, coherente con horarios.js y servidor)
 DIAS_MAP = {
     'LUNES':     'LUNES',
     'MARTES':    'MARTES',
-    'MIÉRCOLES': 'MIERCOLES',
-    'MIERCOLES': 'MIERCOLES',
+    'MIÉRCOLES': 'MIÉRCOLES',
+    'MIERCOLES': 'MIÉRCOLES',
     'JUEVES':    'JUEVES',
     'VIERNES':   'VIERNES',
 }
@@ -64,12 +64,27 @@ def parse_excel_bytes(file_bytes: bytes, curso: int, cuatrimestre: str, grupo: i
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
 
     # Buscar la hoja correcta
+    # Formato canónico: '1C_grupo1', '2C_grupo1'
+    # Formato UPCT alternativo: '2ºC 1ºQ', '2ºC 2ºQ', '1ºC 1ºQ', etc.
+    cuatQ = '1' if cuatrimestre.startswith('1') else '2'
     target = f"{cuatrimestre}_grupo{grupo}"
+    ws = None
     if target in wb.sheetnames:
         ws = wb[target]
-    elif wb.sheetnames:
-        ws = wb[wb.sheetnames[0]]
     else:
+        # Buscar hoja por indicador de cuatrimestre: '1ºQ', '1Q', '2ºQ', '2Q'
+        for name in wb.sheetnames:
+            nu = name.upper().replace('º', '')
+            if f'{cuatQ}Q' in nu:
+                ws = wb[name]
+                break
+        if ws is None:
+            # Fallback posicional: 1C→primera hoja, 2C→segunda hoja (si existe)
+            if cuatrimestre.startswith('2') and len(wb.sheetnames) > 1:
+                ws = wb[wb.sheetnames[1]]
+            elif wb.sheetnames:
+                ws = wb[wb.sheetnames[0]]
+    if ws is None:
         return []
 
     # Leer toda la hoja en una matriz Python
@@ -129,8 +144,8 @@ def parse_excel_bytes(file_bytes: bytes, curso: int, cuatrimestre: str, grupo: i
                 if 'NO LECTIVO' in val.upper():
                     continue
 
-                parsed = _parse_celda(val)
-                if parsed:
+                parsed_list = _parse_celda(val)
+                for parsed in parsed_list:
                     parsed.update({
                         'semana':        sem_num,
                         'dia':           dia,
@@ -177,38 +192,60 @@ def parse_excel_all_cuats(file_bytes: bytes, curso: int) -> dict:
 
 # ─── PARSER DE CELDA ─────────────────────────────────────────────────────────
 
-def _parse_celda(val: str):
-    """Parsea el contenido de una celda de clase."""
-    m = _SUBJECT_RE.match(val.strip())
-    if not m:
-        return None
+def _parse_celda(val: str) -> list:
+    """
+    Parsea el contenido de una celda de clase.
 
-    codigo  = m.group(1).strip()
-    nombre  = m.group(2).strip()
-    resto   = m.group(3) or ''
+    Soporta celdas con una sola clase o varias separadas por ' / ':
+        [524101003] Expresión Gráfica
+        [524101001] Matemáticas I | LAB | Subgrupos: 1 | Obs: / [524101003] Expresión Gráfica | Subgrupos: 2
 
-    tipo          = ''
-    subgrupo      = ''
-    aula_override = ''
+    Devuelve siempre una lista (vacía si la celda no contiene clases válidas).
+    """
+    resultados = []
+    # Separar entradas múltiples: ' / [' es el delimitador de desdoble
+    partes = re.split(r'\s*/\s*(?=\[)', val.strip())
+    for parte in partes:
+        parte = parte.strip()
+        m = _SUBJECT_RE.match(parte)
+        if not m:
+            continue
 
-    for part in [p.strip() for p in resto.split('|') if p.strip()]:
-        pu = part.upper()
-        if pu == 'LAB':
-            tipo = 'LAB'
-        elif pu == 'INFO':
-            tipo = 'INFO'
-        elif pu.startswith('SUBGRUPOS:'):
-            subgrupo = part.split(':', 1)[1].strip()
-        elif pu.startswith('AULA:'):
-            aula_override = part.split(':', 1)[1].strip()
+        codigo  = m.group(1).strip()
+        nombre  = m.group(2).strip()
+        resto   = m.group(3) or ''
 
-    return {
-        'asig_codigo':    codigo,
-        'asig_nombre':    nombre,
-        'tipo':           tipo,
-        'subgrupo':       subgrupo,
-        'aula_override':  aula_override,
-    }
+        tipo          = ''
+        subgrupo      = ''
+        aula_override = ''
+
+        for part in [p.strip() for p in resto.split('|') if p.strip()]:
+            pu = part.upper()
+            if pu == 'LAB':
+                tipo = 'LAB'
+            elif pu in ('INFO', 'INF'):
+                tipo = 'INF'
+            elif pu.startswith('SUBGRUPOS:'):
+                subgrupo = part.split(':', 1)[1].strip()
+            elif pu.startswith('AULA:'):
+                val_aula = part.split(':', 1)[1].strip()
+                # 'Aula: LAB' / 'Aula: INF' indican tipo de actividad, no aula física
+                if val_aula.upper() == 'LAB':
+                    tipo = 'LAB'
+                elif val_aula.upper() in ('INF', 'INFO'):
+                    tipo = 'INF'
+                else:
+                    aula_override = val_aula
+            # 'OBS:' y otros campos se ignoran intencionadamente
+
+        resultados.append({
+            'asig_codigo':    codigo,
+            'asig_nombre':    nombre,
+            'tipo':           tipo,
+            'subgrupo':       subgrupo,
+            'aula_override':  aula_override,
+        })
+    return resultados
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────

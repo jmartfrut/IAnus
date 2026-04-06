@@ -192,7 +192,7 @@ def build_sheet(ws, grupo_data, grupos_order, degree_acronym="GIM"):
     aula = g.get("aula", "")
     clave = g["clave"]
 
-    label_grupo = "Grupo Único" if grupo_num == "unico" else f"Grupo {grupo_num}"
+    label_grupo = f"Grupo {grupo_num}"
     label_cuat = "1er Cuatrimestre" if cuat == "1C" else "2º Cuatrimestre"
     titulo_bloque = f"{curso}º Curso {label_cuat} ({label_grupo})"
 
@@ -228,7 +228,7 @@ def build_sheet(ws, grupo_data, grupos_order, degree_acronym="GIM"):
 
     # ── Columnas A-B: etiquetas meta ──
     meta_labels = ["Titulación:", "Curso:", "Cuatrimestre:", "Grupo:", "Aula:"]
-    meta_values = [degree_acronym, curso, cuat, grupo_num if grupo_num != "unico" else "Único", aula]
+    meta_values = [degree_acronym, curso, cuat, grupo_num, aula]
     for i, (lbl, val) in enumerate(zip(meta_labels, meta_values)):
         row = i + 1
         if row > 5:
@@ -320,8 +320,6 @@ def build_sheet(ws, grupo_data, grupos_order, degree_acronym="GIM"):
 def _sheet_name(g):
     """Genera el nombre de hoja para un grupo."""
     cuat_label = "1C" if g["cuatrimestre"] == "1C" else "2C"
-    if g["grupo"] == "unico":
-        return f"{cuat_label}_GrupoUnico"
     return f"{cuat_label}_Grupo{g['grupo']}"
 
 
@@ -392,10 +390,7 @@ def exportar(db_path, template_path, output_path):
         clave = g["clave"]
         curso = g["curso"]
         grupo_num = g["grupo"]
-        if grupo_num == "unico":
-            sheet_name = f"{curso}_{g['cuatrimestre']}_Gunico"
-        else:
-            sheet_name = f"{curso}_{g['cuatrimestre']}_G{grupo_num}"
+        sheet_name = f"{curso}_{g['cuatrimestre']}_G{grupo_num}"
         ws = wb_out.create_sheet(title=sheet_name)
         build_sheet(ws, all_data[clave], grupos)
 

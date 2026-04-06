@@ -74,6 +74,10 @@ MESES_ES = {
 # Código por defecto cuando no hay coincidencia de AF
 DEFAULT_TYPE_CODE = 'AD'
 
+# Offset aplicado a los números de semana en la columna WEEKS del Excel institucional.
+# La UPCT usa una numeración que comienza en 101 (semana 1 interna → 101 exportada).
+WEEK_OFFSET = 100
+
 HEADERS = [
     'EVENTNAME', 'EVENTTYPE', 'DAYNUMBER', 'DAY',
     'HOURBEGIN', 'HOUREND', 'TYPOLOGYNAME',
@@ -328,10 +332,9 @@ def parse_franja(label):
 def section_code(acronym, curso, grupo, subg):
     """
     Genera el código de sección: GIM1_G1_4
-    curso: int, grupo: str ('1','2','unico'), subg: str ('1','2',...)
+    curso: int, grupo: str ('1','2',...), subg: str ('1','2',...)
     """
-    grp = grupo if grupo != 'unico' else 'unico'
-    return f'{acronym}{curso}_G{grp}_{subg}'
+    return f'{acronym}{curso}_G{grupo}_{subg}'
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -567,9 +570,10 @@ def build_rows(grupos, data_by_grupo, config, weeks_map, by_code, by_name, af_to
             classroom = meta['classroom']
             observacion = meta['observacion']
 
-            # Semanas únicas y ordenadas
+            # Semanas únicas y ordenadas; se aplica WEEK_OFFSET para que
+            # la semana interna 1 se exporte como 101, la 2 como 102, etc.
             weeks_sorted = sorted(set(real_weeks))
-            weeks_str = ','.join(str(w) for w in weeks_sorted)
+            weeks_str = ','.join(str(w + WEEK_OFFSET) for w in weeks_sorted)
 
             # HOURBEGIN / HOUREND
             hour_begin, hour_end = parse_franja(franja_label)

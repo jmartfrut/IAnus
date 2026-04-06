@@ -34,7 +34,7 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "config.json"
 
-DIAS_SEMANA = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES']
+DIAS_SEMANA = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES']
 MESES = ['', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
          'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
 
@@ -475,10 +475,10 @@ def insert_grupos(conn, ds):
             n = cuats.get(cuat, 1)
             if n == 1:
                 aula  = aulas_list[0] if aulas_list else ''
-                clave = f"{curso}_{cuat}_grupo_unico"
+                clave = f"{curso}_{cuat}_grupo_1"
                 conn.execute(
                     "INSERT INTO grupos (curso, cuatrimestre, grupo, aula, clave) VALUES (?,?,?,?,?)",
-                    (curso, cuat, 'unico', aula, clave)
+                    (curso, cuat, '1', aula, clave)
                 )
                 count += 1
             else:

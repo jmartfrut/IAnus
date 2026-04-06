@@ -2243,7 +2243,7 @@ function renderEvolucionSection() {
 
   groupKeys.forEach(gKey => {
     const g = DB.grupos[gKey];
-    const groupLabel = g.grupo === 'unico' ? 'Grupo Único' : 'Grupo ' + g.grupo;
+    const groupLabel = 'Grupo ' + g.grupo;
     const weeks = g.semanas;
     const evol = computeEvolucionData(weeks);
     const codsWithData = Object.keys(evol).filter(cod => {
@@ -2332,7 +2332,7 @@ function renderStats() {
       totalH         += (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
       totalParciales += a.counts.parcial;
     });
-    const groupLabel = g.grupo === 'unico' ? 'Grupo &Uacute;nico' : 'Grupo ' + g.grupo;
+    const groupLabel = 'Grupo ' + g.grupo;
     const aula = g.aula ? ' &nbsp;&middot;&nbsp; ' + formatAula(g.aula) : '';
 
     // Contar errores fichas para el badge de cabecera (excluye overrides manuales por grupo)
@@ -2429,7 +2429,7 @@ function updateGrupoOptions() {
   // Find available groups for this curso+cuat
   const available = Object.keys(DB.grupos).filter(k => k.startsWith(key)).map(k => k.replace(key, ''));
   sel.innerHTML = available.map(g => {
-    const label = g === 'unico' ? 'Grupo Unico' : 'Grupo ' + g;
+    const label = 'Grupo ' + g;
     return '<option value="' + g + '">' + label + '</option>';
   }).join('');
   if (!available.includes(currentGroup)) {
@@ -2723,7 +2723,7 @@ async function deleteSlot() {
 function getPrintInfo() {
   const g = getGrupo();
   const ordinals = {'1':'1er','2':'2o','3':'3er','4':'4o'};
-  const grupoLabel  = currentGroup === 'unico' ? 'Grupo Unico' : 'Grupo ' + currentGroup;
+  const grupoLabel  = 'Grupo ' + currentGroup;
   const cuatLabel   = currentCuat === '1C' ? '1er Cuatrimestre' : '2o Cuatrimestre';
   const aulaLabel   = g && g.aula ? ' — ' + formatAula(g.aula) : '';
   const aulario     = AULARIO_POR_CURSO[String(currentCurso)];
@@ -3068,7 +3068,7 @@ async function exportAllGradoPDF() {
       if (!weeks.length) continue;
 
       const basePct    = Math.round(5 + (gi / total) * 90);
-      const grupoLabel = grupo === 'unico' ? 'Único' : 'Grupo ' + grupo;
+      const grupoLabel = 'Grupo ' + grupo;
       setPdfProgress(basePct, `PDF ${gi + 1}/${total}: Curso ${curso} · ${cuat} · ${grupoLabel}`);
 
       // Generar PDF de todas las semanas de este grupo
@@ -3125,7 +3125,7 @@ async function exportAllGradoPDF() {
       document.body.removeChild(cap);
 
       // Añadir al ZIP en carpeta por curso
-      const grupoFile = grupo === 'unico' ? 'GrupoUnico' : 'Grupo' + grupo;
+      const grupoFile = 'Grupo' + grupo;
       zip.folder('Curso' + curso).file(`${cuat}_${grupoFile}.pdf`, pdf.output('blob'));
     }
 
@@ -3199,7 +3199,7 @@ async function renderComentarioSection() {
   if (!sec) return;
   const grupoKey = _comentarioKey();
   const text = await loadComentario(grupoKey);
-  const groupLabel = currentGroup === 'unico' ? 'Grupo Único' : 'Grupo ' + currentGroup;
+  const groupLabel = 'Grupo ' + currentGroup;
   sec.innerHTML = `
     <details class="comentario-details" id="comentarioDetails">
       <summary class="comentario-summary">

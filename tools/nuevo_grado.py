@@ -11,7 +11,9 @@ actividades, asignaturas) y genera la carpeta grados/<SIGLAS>/ con:
     config.json, asignaturas_<SIGLAS>.csv, horarios.db, launchers
 """
 
+import base64
 import csv
+import io
 import json
 import os
 import socket
@@ -274,6 +276,15 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
 <div class="card" id="step3" style="display:none">
   <h2>3 · Calendario académico</h2>
   <div class="desc">Define el inicio y fin de cada cuatrimestre. Haz clic en un día para marcarlo como <strong>no lectivo</strong> (naranja) o <strong>festivo</strong> (rojo). Segundo clic cambia el tipo, tercer clic lo borra.</div>
+
+  <!-- Barra importación Excel -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+    <label class="btn btn-outline" style="font-size:.82rem;padding:7px 14px;cursor:pointer;margin:0">
+      ⬆ Importar desde Excel
+      <input type="file" accept=".xlsx" style="display:none" onchange="importCalXlsx(event)">
+    </label>
+    <span id="cal-import-status" style="font-size:.79rem;color:#6a7a8a;font-style:italic"></span>
+  </div>
 
   <div class="cal-tabs">
     <button class="cal-tab active" id="tab-1C" onclick="switchCalTab('1C')">1er Cuatrimestre</button>
@@ -666,6 +677,12 @@ function validateStep(n) {
       return confirm('La tabla de asignaturas está vacía. ¿Continuar de todas formas? (podrás añadirlas más tarde editando el CSV)');
     }
   }
+  if (n === 7) {
+    if (importMode === 'importar' && !excelAnalizado) {
+      alert('Debes pulsar "🔍 Analizar Excel" antes de continuar.');
+      return false;
+    }
+  }
   return true;
 }
 
@@ -893,6 +910,76 @@ function getCalendario() {
   });
   if (vacs.length) cal['2C'].vacaciones = vacs;
   return cal;
+}
+
+// ─── CALENDARIO: IMPORTAR DESDE EXCEL ────────────────────────────────────────
+
+function importCalXlsx(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const st = document.getElementById('cal-import-status');
+  st.style.color = '#6a7a8a';
+  st.textContent = 'Leyendo fichero…';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(e.target.result)));
+    fetch('/api/parse_calendario_xlsx', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({xlsx_b64: b64})
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (!res.ok) {
+        st.style.color = '#ef4444';
+        st.textContent = '✕ Error: ' + (res.error || 'desconocido');
+        return;
+      }
+      applyCalendarioFromXlsx(res.calendario);
+      st.style.color = '#22863a';
+      st.textContent = '✓ Calendario importado correctamente';
+    })
+    .catch(err => {
+      st.style.color = '#ef4444';
+      st.textContent = '✕ Error de red: ' + err;
+    });
+  };
+  reader.readAsArrayBuffer(file);
+  // Limpiar input para permitir reimportar el mismo fichero
+  event.target.value = '';
+}
+
+function applyCalendarioFromXlsx(cal) {
+  // Rellenar fechas
+  ['1C', '2C'].forEach((q, i) => {
+    const idx = i + 1;
+    const fIni = document.getElementById('c' + idx + '-inicio');
+    const fFin = document.getElementById('c' + idx + '-fin');
+    if (fIni && cal[q].inicio) fIni.value = cal[q].inicio;
+    if (fFin && cal[q].fin)   fFin.value = cal[q].fin;
+  });
+  // Limpiar calDays y repoblar
+  calDays['1C'] = {};
+  calDays['2C'] = {};
+  ['1C','2C'].forEach(q => {
+    (cal[q].festivos || []).forEach(f => {
+      if (f.fecha) calDays[q][f.fecha] = { tipo: f.tipo, desc: f.descripcion || '' };
+    });
+  });
+  // Vacaciones
+  const tbody = document.getElementById('vacaciones-tbody');
+  tbody.innerHTML = '';
+  (cal['2C'].vacaciones || []).forEach(v => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="date" class="v-ini" value="${v.inicio||''}" oninput="renderCal('2C')"></td>
+      <td><input type="date" class="v-fin" value="${v.fin||''}" oninput="renderCal('2C')"></td>
+      <td><input type="text" class="v-desc" value="${(v.descripcion||'').replace(/"/g,'&quot;')}" placeholder="ej. Carnaval"></td>
+      <td class="td-btn"><button class="btn-del" onclick="this.closest('tr').remove();renderCal('2C')">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  // Redibujar calendarios
+  renderCal('1C');
+  renderCal('2C');
 }
 
 // ─── STEP 5: PREVIEW ─────────────────────────────────────────────────────────
@@ -1148,9 +1235,11 @@ function resetWizard() {
 let importMode    = 'vacio';
 let importedClases = [];
 let excelFiles    = {};   // curso_num (int) → File
+let excelAnalizado = false;  // true una vez que se ha pulsado "Analizar Excel" y completado
 
 function setImportMode(mode) {
   importMode = mode;
+  excelAnalizado = false;
   document.getElementById('mc-vacio').classList.toggle('selected',    mode === 'vacio');
   document.getElementById('mc-importar').classList.toggle('selected', mode === 'importar');
   const panel = document.getElementById('import-excel-panel');
@@ -1200,6 +1289,7 @@ function excelFileSelected(curso, event) {
   const p = document.getElementById('import-preview');
   if (p) { p.style.display = 'none'; p.innerHTML = ''; }
   importedClases = [];
+  excelAnalizado = false;
 }
 
 async function analizarExcels() {
@@ -1266,7 +1356,8 @@ async function analizarExcels() {
 
   btn.disabled = false;
   btn.textContent = '🔍 Analizar Excel';
-  hint.textContent = total > 0 ? 'Pulsa "Siguiente →" para continuar.' : 'No se encontraron clases.';
+  excelAnalizado = true;
+  hint.textContent = total > 0 ? 'Pulsa "Siguiente →" para continuar.' : 'No se encontraron clases. Puedes continuar o seleccionar otros archivos.';
 }
 
 function fileToBase64(file) {
@@ -1536,6 +1627,10 @@ def api_parse_excel(data):
     """
     try:
         import base64
+        # Asegurar que tools/ está en sys.path (necesario en Windows si el CWD no es tools/)
+        _tools_dir = str(Path(__file__).parent)
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
         from importar_horarios import parse_excel_all_cuats
 
         file_b64 = data.get('file_b64', '')
@@ -1600,6 +1695,9 @@ def api_crear(data):
         if clases_importadas and result.returncode == 0:
             try:
                 import sqlite3 as _sqlite3
+                _tools_dir = str(Path(__file__).parent)
+                if _tools_dir not in sys.path:
+                    sys.path.insert(0, _tools_dir)
                 from setup_grado import import_clases_desde_excel
                 db_file = grado_dir / cfg['server']['db_name']
                 if db_file.exists():
@@ -1718,6 +1816,290 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f8;color:#1a2a3
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CALENDARIO XLSX — GENERACIÓN Y PARSEO
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _openpyxl_available():
+    try:
+        import openpyxl  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+def generate_calendario_template_xlsx():
+    """Genera una plantilla Excel vacía para el calendario académico.
+    Devuelve bytes del fichero .xlsx."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = Workbook()
+
+    # ── Colores corporativos ─────────────────────────────────────────────────
+    AZUL      = "1A3A6B"
+    AZUL_CLARO = "EEF4FF"
+    NARANJA   = "F59E0B"
+    ROJO      = "EF4444"
+    LILA      = "A78BFA"
+    GRIS_HD   = "F0F4F8"
+    BORDE_COLOR = "C8D4E0"
+
+    def header_font():  return Font(bold=True, color="FFFFFF", name="Arial", size=10)
+    def cell_font():    return Font(name="Arial", size=10)
+    def subhdr_font():  return Font(bold=True, color=AZUL, name="Arial", size=10)
+    def hdr_fill(color=AZUL): return PatternFill("solid", start_color=color, end_color=color)
+    def row_fill(color): return PatternFill("solid", start_color=color, end_color=color)
+    def thin_border():
+        s = Side(style="thin", color=BORDE_COLOR)
+        return Border(left=s, right=s, top=s, bottom=s)
+    def center(): return Alignment(horizontal="center", vertical="center")
+    def vcenter(): return Alignment(horizontal="left", vertical="center")
+
+    # ════════════════════════════════════════════════════════════════
+    # HOJA 1 — Periodos
+    # ════════════════════════════════════════════════════════════════
+    ws1 = wb.active
+    ws1.title = "Periodos"
+    ws1.sheet_view.showGridLines = False
+
+    # Cabecera
+    ws1.merge_cells("A1:C1")
+    c = ws1["A1"]
+    c.value = "Calendario Académico — Periodos"
+    c.font = Font(bold=True, color="FFFFFF", name="Arial", size=12)
+    c.fill = hdr_fill()
+    c.alignment = center()
+    ws1.row_dimensions[1].height = 28
+
+    # Sub-cabecera columnas
+    for col, lbl in enumerate(["Cuatrimestre", "Campo", "Fecha (AAAA-MM-DD)"], start=1):
+        cell = ws1.cell(row=2, column=col, value=lbl)
+        cell.font = subhdr_font()
+        cell.fill = row_fill(GRIS_HD)
+        cell.alignment = center()
+        cell.border = thin_border()
+    ws1.row_dimensions[2].height = 20
+
+    # Filas de datos
+    filas = [
+        ("1C", "Inicio 1er cuatrimestre", ""),
+        ("1C", "Fin 1er cuatrimestre",    ""),
+        ("2C", "Inicio 2º cuatrimestre",  ""),
+        ("2C", "Fin 2º cuatrimestre",     ""),
+    ]
+    fills_periodo = [row_fill(AZUL_CLARO), row_fill(AZUL_CLARO),
+                     row_fill("FFF8E7"),  row_fill("FFF8E7")]
+    for i, (cuatri, campo, fecha) in enumerate(filas, start=3):
+        ws1.cell(row=i, column=1, value=cuatri).font = Font(bold=True, name="Arial", size=10)
+        ws1.cell(row=i, column=2, value=campo).font  = cell_font()
+        ws1.cell(row=i, column=3, value=fecha).font  = Font(name="Arial", size=10, color="555555")
+        for col in range(1, 4):
+            ws1.cell(row=i, column=col).fill      = fills_periodo[i - 3]
+            ws1.cell(row=i, column=col).border    = thin_border()
+            ws1.cell(row=i, column=col).alignment = vcenter()
+        ws1.row_dimensions[i].height = 20
+
+    # Nota de uso
+    ws1.merge_cells("A8:C8")
+    nota = ws1["A8"]
+    nota.value = "ℹ  Introduce las fechas en formato AAAA-MM-DD  (ej. 2026-09-08)"
+    nota.font  = Font(italic=True, color="6A7A8A", name="Arial", size=9)
+    nota.alignment = vcenter()
+
+    # Anchos de columna
+    ws1.column_dimensions["A"].width = 18
+    ws1.column_dimensions["B"].width = 36
+    ws1.column_dimensions["C"].width = 26
+
+    # ════════════════════════════════════════════════════════════════
+    # HOJA 2 — Días especiales
+    # ════════════════════════════════════════════════════════════════
+    ws2 = wb.create_sheet("Días especiales")
+    ws2.sheet_view.showGridLines = False
+
+    ws2.merge_cells("A1:D1")
+    c = ws2["A1"]
+    c.value = "Festivos y Días No Lectivos"
+    c.font  = Font(bold=True, color="FFFFFF", name="Arial", size=12)
+    c.fill  = hdr_fill()
+    c.alignment = center()
+    ws2.row_dimensions[1].height = 28
+
+    for col, lbl in enumerate(["Cuatrimestre", "Fecha (AAAA-MM-DD)", "Tipo", "Descripción (opcional)"], start=1):
+        cell = ws2.cell(row=2, column=col, value=lbl)
+        cell.font = subhdr_font()
+        cell.fill = row_fill(GRIS_HD)
+        cell.alignment = center()
+        cell.border = thin_border()
+    ws2.row_dimensions[2].height = 20
+
+    # Validaciones desplegables
+    dv_cuatri = DataValidation(type="list", formula1='"1C,2C"', allow_blank=False, showDropDown=False)
+    dv_tipo   = DataValidation(type="list", formula1='"festivo,no_lectivo"', allow_blank=False, showDropDown=False)
+    dv_cuatri.sqref = "A3:A200"
+    dv_tipo.sqref   = "C3:C200"
+    ws2.add_data_validation(dv_cuatri)
+    ws2.add_data_validation(dv_tipo)
+
+    # Filas de ejemplo
+    ejemplos = [
+        ("1C", "2026-10-12", "festivo",    "Día de la Hispanidad"),
+        ("1C", "2026-12-08", "festivo",    "Inmaculada Concepción"),
+        ("2C", "2027-03-29", "festivo",    "Lunes de Pascua"),
+        ("2C", "2027-02-12", "no_lectivo", ""),
+    ]
+    fill_festivo    = row_fill("FEE2E2")  # rojo suave
+    fill_nolectivo  = row_fill("FEF3C7")  # naranja suave
+    fill_2c_festivo = row_fill("EDE9FE")  # lila suave
+    fill_2c_nol    = row_fill("FEF9C3")   # amarillo suave
+
+    def ejemplo_fill(cuatri, tipo):
+        if cuatri == "1C":
+            return fill_festivo if tipo == "festivo" else fill_nolectivo
+        return fill_2c_festivo if tipo == "festivo" else fill_2c_nol
+
+    for i, (cuatri, fecha, tipo, desc) in enumerate(ejemplos, start=3):
+        row_data = [cuatri, fecha, tipo, desc]
+        f = ejemplo_fill(cuatri, tipo)
+        for col, val in enumerate(row_data, start=1):
+            cell = ws2.cell(row=i, column=col, value=val)
+            cell.font   = cell_font()
+            cell.fill   = f
+            cell.border = thin_border()
+            cell.alignment = vcenter()
+        ws2.row_dimensions[i].height = 19
+
+    ws2.column_dimensions["A"].width = 16
+    ws2.column_dimensions["B"].width = 24
+    ws2.column_dimensions["C"].width = 16
+    ws2.column_dimensions["D"].width = 36
+
+    # ════════════════════════════════════════════════════════════════
+    # HOJA 3 — Vacaciones (solo 2C)
+    # ════════════════════════════════════════════════════════════════
+    ws3 = wb.create_sheet("Vacaciones")
+    ws3.sheet_view.showGridLines = False
+
+    ws3.merge_cells("A1:C1")
+    c = ws3["A1"]
+    c.value = "Periodos de Vacaciones (solo 2º cuatrimestre)"
+    c.font  = Font(bold=True, color="FFFFFF", name="Arial", size=12)
+    c.fill  = hdr_fill(AZUL)
+    c.alignment = center()
+    ws3.row_dimensions[1].height = 28
+
+    for col, lbl in enumerate(["Inicio (AAAA-MM-DD)", "Fin (AAAA-MM-DD)", "Descripción (opcional)"], start=1):
+        cell = ws3.cell(row=2, column=col, value=lbl)
+        cell.font = subhdr_font()
+        cell.fill = row_fill(GRIS_HD)
+        cell.alignment = center()
+        cell.border = thin_border()
+    ws3.row_dimensions[2].height = 20
+
+    # Fila de ejemplo
+    ej_fill = row_fill("EDE9FE")
+    for col, val in enumerate(["2027-03-26", "2027-04-04", "Semana Santa"], start=1):
+        cell = ws3.cell(row=3, column=col, value=val)
+        cell.font = cell_font()
+        cell.fill = ej_fill
+        cell.border = thin_border()
+        cell.alignment = vcenter()
+    ws3.row_dimensions[3].height = 19
+
+    ws3.merge_cells("A5:C5")
+    nota3 = ws3["A5"]
+    nota3.value = "ℹ  Añade aquí los periodos de vacaciones de Semana Santa, Carnaval, etc."
+    nota3.font  = Font(italic=True, color="6A7A8A", name="Arial", size=9)
+    nota3.alignment = vcenter()
+
+    ws3.column_dimensions["A"].width = 26
+    ws3.column_dimensions["B"].width = 26
+    ws3.column_dimensions["C"].width = 36
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def parse_calendario_xlsx(xlsx_bytes):
+    """Parsea un fichero Excel de calendario y devuelve dict compatible con getCalendario().
+    Estructura retornada:
+      { '1C': { inicio, fin, festivos: [{fecha, tipo, descripcion}] },
+        '2C': { inicio, fin, festivos: [...], vacaciones: [{inicio, fin, descripcion}] } }
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
+    cal = {
+        "1C": {"inicio": "", "fin": "", "festivos": []},
+        "2C": {"inicio": "", "fin": "", "festivos": [], "vacaciones": []},
+    }
+
+    # ── Periodos ─────────────────────────────────────────────────────────────
+    if "Periodos" in wb.sheetnames:
+        ws = wb["Periodos"]
+        campo_map = {
+            "inicio 1er cuatrimestre": ("1C", "inicio"),
+            "fin 1er cuatrimestre":    ("1C", "fin"),
+            "inicio 2º cuatrimestre":  ("2C", "inicio"),
+            "fin 2º cuatrimestre":     ("2C", "fin"),
+            "inicio 2o cuatrimestre":  ("2C", "inicio"),
+            "fin 2o cuatrimestre":     ("2C", "fin"),
+        }
+        for row in ws.iter_rows(min_row=3, values_only=True):
+            if not row or len(row) < 3:
+                continue
+            cuatri_raw = str(row[0] or "").strip().upper()
+            campo_raw  = str(row[1] or "").strip().lower()
+            fecha_raw  = str(row[2] or "").strip() if row[2] is not None else ""
+            # fechas pueden venir como datetime desde openpyxl
+            if hasattr(row[2], "strftime"):
+                fecha_raw = row[2].strftime("%Y-%m-%d")
+            key = campo_map.get(campo_raw)
+            if key:
+                q, field = key
+                cal[q][field] = fecha_raw
+
+    # ── Días especiales ───────────────────────────────────────────────────────
+    if "Días especiales" in wb.sheetnames or "Dias especiales" in wb.sheetnames:
+        ws_name = "Días especiales" if "Días especiales" in wb.sheetnames else "Dias especiales"
+        ws = wb[ws_name]
+        for row in ws.iter_rows(min_row=3, values_only=True):
+            if not row or len(row) < 3:
+                continue
+            cuatri = str(row[0] or "").strip().upper()
+            fecha  = str(row[1] or "").strip() if row[1] is not None else ""
+            if hasattr(row[1], "strftime"):
+                fecha = row[1].strftime("%Y-%m-%d")
+            tipo   = str(row[2] or "").strip().lower()
+            desc   = str(row[3] or "").strip() if len(row) > 3 and row[3] is not None else ""
+            if cuatri not in ("1C", "2C") or not fecha:
+                continue
+            if tipo not in ("festivo", "no_lectivo"):
+                continue
+            cal[cuatri]["festivos"].append({"fecha": fecha, "tipo": tipo, "descripcion": desc})
+
+    # ── Vacaciones ────────────────────────────────────────────────────────────
+    if "Vacaciones" in wb.sheetnames:
+        ws = wb["Vacaciones"]
+        for row in ws.iter_rows(min_row=3, values_only=True):
+            if not row or len(row) < 2:
+                continue
+            ini = str(row[0] or "").strip() if row[0] is not None else ""
+            fin = str(row[1] or "").strip() if row[1] is not None else ""
+            if hasattr(row[0], "strftime"):
+                ini = row[0].strftime("%Y-%m-%d")
+            if hasattr(row[1], "strftime"):
+                fin = row[1].strftime("%Y-%m-%d")
+            desc = str(row[2] or "").strip() if len(row) > 2 and row[2] is not None else ""
+            if ini and fin:
+                cal["2C"]["vacaciones"].append({"inicio": ini, "fin": fin, "descripcion": desc})
+
+    return cal
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HTTP SERVER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1759,6 +2141,20 @@ class WizardHandler(BaseHTTPRequestHandler):
                     self._json(json.load(f))
             else:
                 self._json([])
+        elif self.path == '/api/calendario_template.xlsx':
+            if not _openpyxl_available():
+                self._json({'error': 'openpyxl no instalado. Ejecuta: pip install openpyxl'})
+            else:
+                try:
+                    data = generate_calendario_template_xlsx()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                    self.send_header('Content-Disposition', 'attachment; filename="calendario_academico.xlsx"')
+                    self.send_header('Content-Length', len(data))
+                    self.end_headers()
+                    self.wfile.write(data)
+                except Exception as e:
+                    self._json({'error': str(e)})
         else:
             self._404()
 
@@ -1778,6 +2174,17 @@ class WizardHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/resolver_csv_dtie' and _DTIE_AVAILABLE:
             data = self._read_json()
             self._json(dtie_api_resolver_csv_dtie(data))
+        elif self.path == '/api/parse_calendario_xlsx':
+            if not _openpyxl_available():
+                self._json({'ok': False, 'error': 'openpyxl no instalado. Ejecuta: pip install openpyxl'})
+            else:
+                try:
+                    payload = self._read_json()
+                    xlsx_bytes = base64.b64decode(payload.get('xlsx_b64', ''))
+                    cal = parse_calendario_xlsx(xlsx_bytes)
+                    self._json({'ok': True, 'calendario': cal})
+                except Exception as e:
+                    self._json({'ok': False, 'error': str(e)})
         else:
             self._404()
 
