@@ -28,12 +28,19 @@ Formato del CSV (config/fichas_DTIE_<SIGLAS_B>_<SIGLAS_A>.csv):
 
 import argparse
 import csv
+import io
 import json
 import shutil
 import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar errores con emojis en Windows (cp1252)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 BASE_DIR = Path(__file__).parent.parent  # raíz del proyecto
 
@@ -311,8 +318,16 @@ def sync_clases(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=False):
                 ).fetchall()
                 starred_subgrupos = {r[0] for r in starred_rows}
                 if starred_subgrupos:
-                    # c[3] = columna subgrupo en el SELECT anterior
-                    clases = [c for c in clases if c[3] in starred_subgrupos]
+                    # c[3] = columna subgrupo en el SELECT anterior.
+                    # EXP/EXF (parciales y exámenes en horario) son eventos de
+                    # grupo completo — se copian siempre, independientemente del
+                    # subgrupo registrado en asignaturas_destacadas.
+                    tipo_idx = (8 + extra_cols.index('tipo')) if 'tipo' in extra_cols else None
+                    clases = [
+                        c for c in clases
+                        if c[3] in starred_subgrupos
+                        or (tipo_idx is not None and c[tipo_idx] in ('EXP', 'EXF'))
+                    ]
 
         n_copiadas = 0
         for clase in clases:
@@ -426,6 +441,25 @@ def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=Fals
             continue
 
         src_ef_cols = get_table_columns(src_conn, 'examenes_finales')
+
+        # Verificar que la asignatura está marcada con ⭐ en la BD origen.
+        # Si no lo está, borrar su examen del DTIE (limpieza) y pasar a la siguiente.
+        if table_exists(src_conn, 'asignaturas_destacadas'):
+            starred = src_conn.execute(
+                "SELECT 1 FROM asignaturas_destacadas WHERE codigo = ? LIMIT 1",
+                (codigo,)
+            ).fetchone()
+            if not starred:
+                n_borrados = dtie_conn.execute(
+                    "DELETE FROM examenes_finales WHERE asig_codigo = ?", (codigo,)
+                ).rowcount
+                total_borrados += n_borrados
+                if n_borrados:
+                    log(f"{codigo} ({nombre}): sin ⭐ en {grado_origen} — "
+                        f"{n_borrados} examen(es) final(es) eliminados del DTIE", 'warn')
+                else:
+                    log(f"{codigo} ({nombre}): sin ⭐ en {grado_origen}, se omite", 'warn')
+                continue
 
         # Borrar examen existente en el DTIE para este código
         n_borrados = dtie_conn.execute(

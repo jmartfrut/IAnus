@@ -9,7 +9,6 @@ import json
 import sqlite3
 import os
 import sys
-import webbrowser
 from urllib.parse import urlparse, parse_qs
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.17.4"
+APP_VERSION = "1.19.1"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -65,6 +64,10 @@ DB_PATH    = (os.environ.get("DB_PATH")
               or os.environ.get("DB_PATH_OVERRIDE")
               or os.path.join(SCRIPT_DIR, DB_NAME))
 CURSO_LABEL = os.environ.get("CURSO_LABEL") or _cfg("server", "curso_label", default="2026-2027")
+
+# Ruta original de la BD cuando se trabaja con copia temporal (Windows).
+# Si está definida, el manejador Win32 copia DB_PATH → DB_BACKUP_TARGET al cerrar.
+DB_BACKUP_TARGET = os.environ.get("DB_BACKUP_TARGET", "")
 
 # Branding (colores CSS)
 COLOR_PRIMARY       = _cfg("branding", "primary",       default="#1a3a6b")
@@ -1595,6 +1598,39 @@ def generate_html():
     return _html_cache
 
 
+# ─── WINDOWS: COPIA DE SEGURIDAD AL CERRAR VENTANA ───────────────────────────
+def _setup_win32_backup_handler():
+    """Registra un manejador de consola Windows (SetConsoleCtrlHandler) que copia
+    la BD temporal de vuelta al fichero original (DB_BACKUP_TARGET) cuando el
+    usuario cierra la ventana CMD con la X (CTRL_CLOSE_EVENT).
+
+    Sin esto, el comando 'copy' que sigue al servidor en el .bat generado nunca
+    llega a ejecutarse al cerrar con la X, y los cambios de la sesión se pierden.
+    Solo se activa si DB_BACKUP_TARGET está definido y la plataforma es win32.
+    """
+    if not DB_BACKUP_TARGET or sys.platform != "win32":
+        return
+    import ctypes, shutil
+
+    _HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+
+    def _handler(event):
+        # Eventos relevantes: 0=CTRL_C, 1=CTRL_BREAK, 2=CTRL_CLOSE, 5=CTRL_LOGOFF, 6=CTRL_SHUTDOWN
+        try:
+            if os.path.isfile(DB_PATH):
+                shutil.copy2(DB_PATH, DB_BACKUP_TARGET)
+                print(f"\n[OK] BD guardada en {DB_BACKUP_TARGET}", flush=True)
+        except Exception as exc:
+            print(f"\n[ERROR] al guardar BD: {exc}", flush=True)
+        return False  # propagar al manejador por defecto (cierra el proceso)
+
+    _h = _HandlerRoutine(_handler)
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(_h, True)
+    # Mantener referencia para evitar que el GC elimine el callback
+    _setup_win32_backup_handler._handler_ref = _h
+    print(f"  [Win32] Guardado automático activado → {DB_BACKUP_TARGET}")
+
+
 # ─── MAIN ───
 if __name__ == "__main__":
     init_db_paths()
@@ -1615,10 +1651,7 @@ if __name__ == "__main__":
     print(f"  ║   Servidor: http://localhost:{PORT:<17d}║")
     print(f"  ╚══════════════════════════════════════════════╝\n")
 
-    try:
-        webbrowser.open(f"http://localhost:{PORT}")
-    except:
-        pass
+    _setup_win32_backup_handler()
 
     server = http.server.HTTPServer(("0.0.0.0", PORT), HorarioHandler)
     try:

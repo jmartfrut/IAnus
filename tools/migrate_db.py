@@ -218,6 +218,29 @@ def _m11_destacadas_modo(conn, **ctx):
         conn.execute("ALTER TABLE asignaturas_destacadas ADD COLUMN modo INTEGER DEFAULT 1")
 
 
+def _m12_fix_af_cat_stamp(conn, **ctx):
+    """Re-garantiza que 'af_cat' existe en clases.
+    Corrección para BDs generadas con nuevo_grado.py/setup_grado.py que fueron
+    estampadas directamente a v11 sin pasar por _m02, dejando la columna ausente."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(clases)").fetchall()}
+    if "af_cat" not in cols:
+        conn.execute("ALTER TABLE clases ADD COLUMN af_cat TEXT DEFAULT NULL")
+
+
+def _m13_fix_comentarios_stamp(conn, **ctx):
+    """Crea comentarios_horario si no existe.
+    Corrección para BDs generadas con setup_grado.py que fueron estampadas a v11
+    sin incluir esta tabla (omitida en create_tables hasta la v1.18.0)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS comentarios_horario (
+            grupo_key  TEXT NOT NULL,
+            comentario TEXT DEFAULT '',
+            ts         TEXT DEFAULT '',
+            PRIMARY KEY (grupo_key)
+        )
+    """)
+
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -233,8 +256,10 @@ MIGRATIONS = [
     (9,  "Crea tabla comentarios_horario",                                       _m09_comentarios_horario),
     (10, "Añade columna 'cuatrimestre' a fichas (A=anual, divide AFs por 2)",   _m10_fichas_cuatrimestre),
     (11, "Añade columna 'modo' a asignaturas_destacadas (1=color+badge, 2=solo badge)", _m11_destacadas_modo),
+    (12, "Re-garantiza columna 'af_cat' en clases (fix stamp sin columna)",     _m12_fix_af_cat_stamp),
+    (13, "Crea comentarios_horario si no existe (fix stamp sin tabla)",         _m13_fix_comentarios_stamp),
     # ── Próximas migraciones aquí ─────────────────────────────────────────────
-    # (12, "Descripción del cambio",  _m12_nueva_funcion),
+    # (14, "Descripción del cambio",  _m14_nueva_funcion),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

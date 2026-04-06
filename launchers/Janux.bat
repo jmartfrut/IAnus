@@ -25,7 +25,6 @@ if not defined PYTHON_CMD (
     pause
     exit /b 1
 )
-echo [INFO] Arrancando asistente en http://localhost:8091 ...
-start "" http://localhost:8091
+echo [INFO] Arrancando asistente en http://localhost:8092 ...
 %PYTHON_CMD% tools\nuevo_grado.py
 pause

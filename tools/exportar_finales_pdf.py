@@ -646,7 +646,8 @@ if __name__ == '__main__':
     print(f"Generando PDF: {len(exams)} exámenes del período '{label}'")
     pdf_bytes = generar_pdf_finales(exams, label, curso_label, start, end)
 
-    out = f'/tmp/finales_test_{periodo}.pdf'
+    import tempfile, pathlib
+    out = str(pathlib.Path(tempfile.gettempdir()) / f'finales_test_{periodo}.pdf')
     with open(out, 'wb') as f:
         f.write(pdf_bytes)
     print(f"PDF guardado en {out} ({len(pdf_bytes)//1024} KB)")

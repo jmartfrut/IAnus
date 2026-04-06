@@ -24,10 +24,17 @@ Uso:
 
 import argparse
 import csv
+import io
 import json
 import sqlite3
 import sys
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar errores con emojis en Windows (cp1252)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR   = SCRIPT_DIR.parent

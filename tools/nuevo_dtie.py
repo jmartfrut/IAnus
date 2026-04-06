@@ -11,6 +11,7 @@ Genera grados/<SIGLAS>/ con config.json, horarios.db y launchers.
 Las clases se copian semana a semana de las BDs de origen.
 """
 
+import io
 import json
 import sqlite3
 import subprocess
@@ -20,6 +21,12 @@ import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar errores con emojis en Windows (cp1252)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 PORT     = 8092
 BASE_DIR = Path(__file__).parent.parent  # raíz del proyecto (tools/../)
@@ -1360,7 +1367,8 @@ def create_tables_dtie(conn):
             asignatura_id INTEGER NOT NULL UNIQUE REFERENCES asignaturas(id) ON DELETE CASCADE,
             creditos REAL DEFAULT 0, af1 INTEGER DEFAULT 0, af2 INTEGER DEFAULT 0,
             af3 INTEGER DEFAULT 0, af4 INTEGER DEFAULT 0,
-            af5 INTEGER DEFAULT 0, af6 INTEGER DEFAULT 0
+            af5 INTEGER DEFAULT 0, af6 INTEGER DEFAULT 0,
+            cuatrimestre  TEXT DEFAULT NULL
         );
         CREATE TABLE IF NOT EXISTS festivos_calendario (
             fecha TEXT PRIMARY KEY, tipo TEXT DEFAULT 'no_lectivo', descripcion TEXT DEFAULT ''

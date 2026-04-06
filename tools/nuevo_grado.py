@@ -1406,6 +1406,10 @@ DB_TMP="/tmp/{db_stem}_{siglas}.db"
 
 cp "$DB_SRC" "$DB_TMP" 2>/dev/null || true
 
+# Verificar e instalar dependencias Python
+echo "[INFO] Verificando dependencias..."
+python3 -m pip install -r "$ROOT/requirements.txt" --quiet 2>/dev/null || true
+
 cleanup() {{
   kill "$SERVER_PID" 2>/dev/null
   wait "$SERVER_PID" 2>/dev/null
@@ -1427,7 +1431,8 @@ wait "$SERVER_PID"
     command_path = grado_dir / f'Iniciar {siglas}.command'
     command_path.write_text(command_content, encoding='utf-8')
     command_path.chmod(0o755)
-    subprocess.run(['chmod', '+x', str(command_path)], check=False)
+    if sys.platform != 'win32':
+        subprocess.run(['chmod', '+x', str(command_path)], check=False)
 
     # ── Windows .bat ────────────────────────────────────────────────────────
     bat_content = f"""@echo off
@@ -1456,16 +1461,34 @@ if not defined PYTHON_CMD (
     exit /b 1
 )
 
+REM Verificar e instalar dependencias Python
+echo [INFO] Verificando dependencias...
+%PYTHON_CMD% -m pip install -r "%ROOT%\\requirements.txt" --quiet 2>nul
+if errorlevel 1 (
+    echo [AVISO] No se pudieron instalar algunas dependencias. Continuando de todas formas...
+)
+
 copy /Y "%DB_SRC%" "%DB_TMP%" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] No se pudo copiar la base de datos al directorio temporal.
+    pause
+    exit /b 1
+)
 
 set DB_PATH_OVERRIDE=%DB_TMP%
+set DB_BACKUP_TARGET=%DB_SRC%
 set CURSO_LABEL={curso_label}
 set CONFIG_PATH_OVERRIDE=%DIR%
 start "" "http://localhost:{port}"
 %PYTHON_CMD% "%ROOT%\\servidor_horarios.py" --grado "grados/{siglas}"
 
 copy /Y "%DB_TMP%" "%DB_SRC%" >nul 2>&1
-echo Base de datos guardada.
+if errorlevel 1 (
+    echo [AVISO] No se pudo guardar la BD automaticamente.
+    echo         La copia temporal sigue en: %DB_TMP%
+) else (
+    echo [OK] Base de datos guardada.
+)
 pause
 """
     bat_path = grado_dir / f'Iniciar {siglas}.bat'
@@ -1480,6 +1503,10 @@ DB_SRC="$DIR/{db_rel}"
 DB_TMP="/tmp/{db_stem}_{siglas}.db"
 
 cp "$DB_SRC" "$DB_TMP" 2>/dev/null || true
+
+# Verificar e instalar dependencias Python
+echo "[INFO] Verificando dependencias..."
+python3 -m pip install -r "$ROOT/requirements.txt" --quiet 2>/dev/null || true
 
 cleanup() {{
   kill "$SERVER_PID" 2>/dev/null
@@ -1498,7 +1525,8 @@ wait "$SERVER_PID"
     sh_path = grado_dir / f'iniciar_{siglas.lower()}.sh'
     sh_path.write_text(sh_content, encoding='utf-8')
     sh_path.chmod(0o755)
-    subprocess.run(['chmod', '+x', str(sh_path)], check=False)
+    if sys.platform != 'win32':
+        subprocess.run(['chmod', '+x', str(sh_path)], check=False)
 
 
 def api_parse_excel(data):
@@ -1559,8 +1587,9 @@ def api_crear(data):
         cmd = [sys.executable, str(setup_script),
                str(grado_dir), str(csv_path), '--force']
         result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(BASE_DIR))
-        output = result.stdout + result.stderr
+            cmd, capture_output=True, text=True, encoding='utf-8',
+            errors='replace', cwd=str(BASE_DIR))
+        output = (result.stdout or '') + (result.stderr or '')
 
         # Launchers en la raíz del proyecto
         generar_launchers(grado_dir, siglas, cfg)

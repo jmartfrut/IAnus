@@ -17,12 +17,19 @@ Uso (estructura por grados):
 """
 
 import csv
+import io
 import json
 import os
 import sqlite3
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+
+# Forzar UTF-8 en stdout/stderr para evitar errores con emojis en Windows (cp1252)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "config.json"
@@ -379,7 +386,8 @@ def create_tables(conn):
             subgrupo        TEXT DEFAULT '',
             observacion     TEXT DEFAULT '',
             es_no_lectivo   INTEGER DEFAULT 0,
-            contenido       TEXT DEFAULT ''
+            contenido       TEXT DEFAULT '',
+            af_cat          TEXT DEFAULT NULL
         );
         CREATE TABLE IF NOT EXISTS fichas (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -429,6 +437,12 @@ def create_tables(conn):
             subgrupo  TEXT NOT NULL DEFAULT '',
             modo      INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (codigo, grupo_num, act_type, subgrupo)
+        );
+        CREATE TABLE IF NOT EXISTS comentarios_horario (
+            grupo_key  TEXT NOT NULL,
+            comentario TEXT DEFAULT '',
+            ts         TEXT DEFAULT '',
+            PRIMARY KEY (grupo_key)
         );
     """)
     conn.commit()
@@ -853,10 +867,12 @@ def main():
         print(f"  {cuat}: {sem_real} semanas ({cal[cuat]['inicio']} → {cal[cuat]['fin']})")
     print()
 
-    # Crear BD en /tmp para evitar errores de I/O en rutas de red (Dropbox, etc.)
-    # y copiar al destino final al terminar
+    # Crear BD en el directorio temporal del sistema para evitar errores de I/O
+    # en rutas de red (Dropbox, etc.) y copiar al destino final al terminar.
+    # Se usa tempfile.gettempdir() en lugar de /tmp para compatibilidad con Windows.
     import shutil
-    tmp_path = Path('/tmp') / db_name
+    import tempfile
+    tmp_path = Path(tempfile.gettempdir()) / db_name
     if tmp_path.exists():
         tmp_path.unlink()
 
