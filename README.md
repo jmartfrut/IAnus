@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="docs/logo_janux.svg" alt="Janux" width="400"/>
+  <img src="docs/logo_janux.svg" alt="Janux" width="300"/>
 </p>
 
 ---
@@ -274,5 +274,5 @@ MIT © 2026 Jesús Martínez
 ---
 
 <p align="center">
-  <img src="docs/logo_upct.png" alt="Universidad Politécnica de Cartagena" width="220"/>
+  <img src="docs/logo_upct.png" alt="Universidad Politécnica de Cartagena" width="340"/>
 </p>
