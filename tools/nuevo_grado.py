@@ -250,6 +250,20 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
   </div>
 
   <div class="sec-title">Grupos por curso</div>
+  <div style="display:flex;gap:20px;align-items:center;margin-bottom:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid #e8edf2">
+    <span style="font-size:.81rem;color:#5a6a7a;font-weight:600">Aplicar a todos los cursos:</span>
+    <label style="display:flex;align-items:center;gap:6px;font-size:.81rem;color:#5a6a7a">
+      1er cuatr.
+      <input type="number" id="e-all-g1c" min="1" max="10" style="width:62px;margin-left:2px"
+             placeholder="—" oninput="applyAllGroups('g1c', this.value)">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:.81rem;color:#5a6a7a">
+      2º cuatr.
+      <input type="number" id="e-all-g2c" min="1" max="10" style="width:62px;margin-left:2px"
+             placeholder="—" oninput="applyAllGroups('g2c', this.value)">
+    </label>
+    <span style="font-size:.77rem;color:#9aabb0;font-style:italic">O edita cada curso individualmente ↓</span>
+  </div>
   <div class="tbl-wrap">
     <table id="cursos-table">
       <thead><tr><th>Curso</th><th>Grupos 1er cuatrimestre</th><th>Grupos 2º cuatrimestre</th><th>Aulario</th></tr></thead>
@@ -771,6 +785,8 @@ function buildAularioOptions(selectedVal) {
 function renderCursoTable() {
   const n = parseInt(gv('e-num-cursos')) || 4;
   const tbody = document.getElementById('cursos-tbody');
+  const allG1c = parseInt(document.getElementById('e-all-g1c')?.value) || null;
+  const allG2c = parseInt(document.getElementById('e-all-g2c')?.value) || null;
   const existing = [];
   tbody.querySelectorAll('tr').forEach(tr => {
     existing.push({
@@ -781,8 +797,8 @@ function renderCursoTable() {
   });
   tbody.innerHTML = '';
   for (let i = 0; i < n; i++) {
-    const g1c     = existing[i] ? existing[i].g1c     : 2;
-    const g2c     = existing[i] ? existing[i].g2c     : (i === n-1 ? 1 : 2);
+    const g1c     = allG1c  ? allG1c  : (existing[i] ? existing[i].g1c  : 2);
+    const g2c     = allG2c  ? allG2c  : (existing[i] ? existing[i].g2c  : (i === n-1 ? 1 : 2));
     const aulario = existing[i] ? existing[i].aulario : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><strong>${i+1}º</strong></td>
@@ -791,6 +807,14 @@ function renderCursoTable() {
       <td><select class="aulario" style="min-width:160px">${buildAularioOptions(aulario)}</select></td>`;
     tbody.appendChild(tr);
   }
+}
+
+function applyAllGroups(cls, val) {
+  const n = parseInt(val);
+  if (!val || isNaN(n) || n < 1) return;
+  document.querySelectorAll('#cursos-tbody .' + cls).forEach(inp => {
+    inp.value = n;
+  });
 }
 
 const DEFAULT_FRANJAS = [
