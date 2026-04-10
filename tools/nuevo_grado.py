@@ -289,6 +289,7 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
   <div class="cal-tabs">
     <button class="cal-tab active" id="tab-1C" onclick="switchCalTab('1C')">1er Cuatrimestre</button>
     <button class="cal-tab" id="tab-2C" onclick="switchCalTab('2C')">2º Cuatrimestre</button>
+    <button class="cal-tab" id="tab-EX" onclick="switchCalTab('EX')">Periodos de Exámenes</button>
   </div>
 
   <!-- ── Panel 1C ── -->
@@ -343,6 +344,65 @@ td input:focus,td select:focus{outline:none;border-color:#1a3a6b}
       </table>
     </div>
     <button class="btn-add" onclick="addVacaciones()" style="margin-top:7px">+ Añadir periodo</button>
+  </div>
+
+  <!-- ── Panel Periodos de Exámenes ── -->
+  <div id="cal-panel-EX" class="cal-panel" style="display:none">
+
+    <div class="sec-title">Convocatoria de Enero (1er Cuatrimestre)</div>
+    <div class="row2" style="max-width:380px;margin-bottom:12px">
+      <div class="field"><label>Inicio</label>
+        <input type="date" id="ex-EXEN-inicio" oninput="renderCalExamen('EXEN')">
+      </div>
+      <div class="field"><label>Fin</label>
+        <input type="date" id="ex-EXEN-fin" oninput="renderCalExamen('EXEN')">
+      </div>
+    </div>
+    <div class="cal-hint">Clic → no lectivo &nbsp;|&nbsp; 2º clic → festivo &nbsp;|&nbsp; 3er clic → borrar</div>
+    <div id="cal-grid-EXEN" class="cal-grid"></div>
+    <div class="cal-legend">
+      <span class="leg-item"><span class="leg-dot" style="background:#fff;border-color:#c8d4e0"></span>Lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#f59e0b"></span>No lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#ef4444"></span>Festivo</span>
+    </div>
+    <div id="cal-list-EXEN" class="cal-marked-list"></div>
+
+    <div class="sec-title" style="margin-top:28px">Convocatoria de Junio (2º Cuatrimestre)</div>
+    <div class="row2" style="max-width:380px;margin-bottom:12px">
+      <div class="field"><label>Inicio</label>
+        <input type="date" id="ex-EXJU-inicio" oninput="renderCalExamen('EXJU')">
+      </div>
+      <div class="field"><label>Fin</label>
+        <input type="date" id="ex-EXJU-fin" oninput="renderCalExamen('EXJU')">
+      </div>
+    </div>
+    <div class="cal-hint">Clic → no lectivo &nbsp;|&nbsp; 2º clic → festivo &nbsp;|&nbsp; 3er clic → borrar</div>
+    <div id="cal-grid-EXJU" class="cal-grid"></div>
+    <div class="cal-legend">
+      <span class="leg-item"><span class="leg-dot" style="background:#fff;border-color:#c8d4e0"></span>Lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#f59e0b"></span>No lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#ef4444"></span>Festivo</span>
+    </div>
+    <div id="cal-list-EXJU" class="cal-marked-list"></div>
+
+    <div class="sec-title" style="margin-top:28px">Convocatoria Extraordinaria (Jun–Jul)</div>
+    <div class="row2" style="max-width:380px;margin-bottom:12px">
+      <div class="field"><label>Inicio</label>
+        <input type="date" id="ex-EXEX-inicio" oninput="renderCalExamen('EXEX')">
+      </div>
+      <div class="field"><label>Fin</label>
+        <input type="date" id="ex-EXEX-fin" oninput="renderCalExamen('EXEX')">
+      </div>
+    </div>
+    <div class="cal-hint">Clic → no lectivo &nbsp;|&nbsp; 2º clic → festivo &nbsp;|&nbsp; 3er clic → borrar</div>
+    <div id="cal-grid-EXEX" class="cal-grid"></div>
+    <div class="cal-legend">
+      <span class="leg-item"><span class="leg-dot" style="background:#fff;border-color:#c8d4e0"></span>Lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#f59e0b"></span>No lectivo</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#ef4444"></span>Festivo</span>
+    </div>
+    <div id="cal-list-EXEX" class="cal-marked-list"></div>
+
   </div>
 
   <div class="actions">
@@ -777,13 +837,21 @@ const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
 const DIAS_SHORT = ['L','M','X','J','V','S','D'];
 
 // calDays['1C'] = { 'YYYY-MM-DD': { tipo: 'no_lectivo'|'festivo', desc: '' } }
-const calDays = { '1C': {}, '2C': {} };
+const calDays = { '1C': {}, '2C': {}, 'EXEN': {}, 'EXJU': {}, 'EXEX': {} };
+
+/* Convierte 'YYYY-MM-DD' a Date a medianoche local (mismo criterio que new Date(yr,mo,day)
+   en renderMonth). Evita el desfase T12:00:00 vs medianoche que excluía el día de inicio. */
+function parseLocalDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
 
 function switchCalTab(q) {
-  ['1C','2C'].forEach(t => {
+  ['1C','2C','EX'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('active', t === q);
     document.getElementById('cal-panel-' + t).style.display = t === q ? 'block' : 'none';
   });
+  if (q === 'EX') initExamenDates();
 }
 
 function renderCal(q) {
@@ -795,8 +863,8 @@ function renderCal(q) {
     grid.innerHTML = '<div style="color:#8a9ab0;font-size:.82rem;padding:8px 0">Introduce las fechas de inicio y fin para ver el calendario.</div>';
     return;
   }
-  const d0 = new Date(ini + 'T12:00:00');
-  const d1 = new Date(fin + 'T12:00:00');
+  const d0 = parseLocalDate(ini);
+  const d1 = parseLocalDate(fin);
   if (d0 > d1) {
     grid.innerHTML = '<div style="color:#ef4444;font-size:.82rem">La fecha de inicio es posterior al fin.</div>';
     return;
@@ -825,7 +893,9 @@ function renderMonth(q, monthDate, rangeStart, rangeEnd, vacRanges) {
     if (!inRange) { cells += `<div class="cal-day out-range">${day}</div>`; continue; }
     const isVac = vacRanges.some(v => date >= v.s && date <= v.e);
     const sp = calDays[q][ds];
-    let cls = 'cal-day in-range' + (dow >= 5 ? ' weekend' : '')
+    const _exKeys = new Set(['EXEN','EXJU','EXEX']);
+    const isWeekend = _exKeys.has(q) ? dow === 6 : dow >= 5;
+    let cls = 'cal-day in-range' + (isWeekend ? ' weekend' : '')
               + (isVac ? ' vacaciones' : '')
               + (sp ? ' ' + sp.tipo.replace('_','-') : '');
     cells += `<div class="${cls}" onclick="toggleCalDay('${q}','${ds}',this)" title="${ds}">${day}</div>`;
@@ -871,7 +941,71 @@ function renderMarkedList(q) {
 
 function removeCalDay(q, ds) {
   delete calDays[q][ds];
-  renderCal(q);
+  // Si es un periodo de examen, re-render con renderCalExamen; si no, con renderCal
+  if (['EXEN','EXJU','EXEX'].includes(q)) renderCalExamen(q);
+  else renderCal(q);
+}
+
+// ─── CALENDARIO: PERIODOS DE EXÁMENES ────────────────────────────────────────
+
+const EX_KEYS = [
+  { key: 'EXEN', iniId: 'ex-EXEN-inicio', finId: 'ex-EXEN-fin' },
+  { key: 'EXJU', iniId: 'ex-EXJU-inicio', finId: 'ex-EXJU-fin' },
+  { key: 'EXEX', iniId: 'ex-EXEX-inicio', finId: 'ex-EXEX-fin' },
+];
+
+function renderCalExamen(key) {
+  const cfg = EX_KEYS.find(p => p.key === key);
+  if (!cfg) return;
+  const ini  = gv(cfg.iniId);
+  const fin  = gv(cfg.finId);
+  const grid = document.getElementById('cal-grid-' + key);
+  if (!ini || !fin) {
+    grid.innerHTML = '<div style="color:#8a9ab0;font-size:.82rem;padding:8px 0">Introduce las fechas de inicio y fin para ver el calendario.</div>';
+    return;
+  }
+  const d0 = parseLocalDate(ini);
+  const d1 = parseLocalDate(fin);
+  if (d0 > d1) {
+    grid.innerHTML = '<div style="color:#ef4444;font-size:.82rem">La fecha de inicio es posterior al fin.</div>';
+    return;
+  }
+  const months = [];
+  const cur  = new Date(d0.getFullYear(), d0.getMonth(), 1);
+  const last = new Date(d1.getFullYear(), d1.getMonth(), 1);
+  while (cur <= last) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
+  grid.innerHTML = months.map(m => renderMonth(key, m, d0, d1, [])).join('');
+  renderMarkedList(key);
+}
+
+function initExamenDates() {
+  const cursoLabel = gv('b-curso-label') || '';
+  const parts = cursoLabel.split('-');
+  const yEnd = parseInt(parts[1]) || (new Date().getFullYear() + 1);
+  const defaults = {
+    'EXEN': { ini: `${yEnd}-01-07`, fin: `${yEnd}-01-31` },
+    'EXJU': { ini: `${yEnd}-05-31`, fin: `${yEnd}-06-22` },
+    'EXEX': { ini: `${yEnd}-06-24`, fin: `${yEnd}-07-17` },
+  };
+  for (const { key, iniId, finId } of EX_KEYS) {
+    const iniEl = document.getElementById(iniId);
+    const finEl = document.getElementById(finId);
+    if (iniEl && !iniEl.value && defaults[key]) iniEl.value = defaults[key].ini;
+    if (finEl && !finEl.value && defaults[key]) finEl.value = defaults[key].fin;
+    renderCalExamen(key);
+  }
+}
+
+function getPeriodosExamenes() {
+  const names = { 'EXEN': 'enero', 'EXJU': 'junio', 'EXEX': 'extraordinaria' };
+  const result = {};
+  for (const { key, iniId, finId } of EX_KEYS) {
+    const festivos = Object.entries(calDays[key] || {}).map(([fecha, info]) => ({
+      fecha, tipo: info.tipo, descripcion: info.desc || ''
+    }));
+    result[names[key]] = { inicio: gv(iniId), fin: gv(finId), festivos };
+  }
+  return result;
 }
 
 function getVacRanges() {
@@ -879,7 +1013,7 @@ function getVacRanges() {
   document.querySelectorAll('#vacaciones-tbody tr').forEach(tr => {
     const s = tr.querySelector('.v-ini')?.value;
     const e = tr.querySelector('.v-fin')?.value;
-    if (s && e) out.push({ s: new Date(s+'T12:00:00'), e: new Date(e+'T12:00:00') });
+    if (s && e) out.push({ s: parseLocalDate(s), e: parseLocalDate(e) });
   });
   return out;
 }
@@ -909,6 +1043,7 @@ function getCalendario() {
     if (ini && fin) vacs.push({ inicio: ini, fin: fin, descripcion: tr.querySelector('.v-desc')?.value || '' });
   });
   if (vacs.length) cal['2C'].vacaciones = vacs;
+  cal.periodos_examenes = getPeriodosExamenes();
   return cal;
 }
 
@@ -950,7 +1085,7 @@ function importCalXlsx(event) {
 }
 
 function applyCalendarioFromXlsx(cal) {
-  // Rellenar fechas
+  // Rellenar fechas cuatrimestrales
   ['1C', '2C'].forEach((q, i) => {
     const idx = i + 1;
     const fIni = document.getElementById('c' + idx + '-inicio');
@@ -958,7 +1093,7 @@ function applyCalendarioFromXlsx(cal) {
     if (fIni && cal[q].inicio) fIni.value = cal[q].inicio;
     if (fFin && cal[q].fin)   fFin.value = cal[q].fin;
   });
-  // Limpiar calDays y repoblar
+  // Limpiar calDays cuatrimestrales y repoblar
   calDays['1C'] = {};
   calDays['2C'] = {};
   ['1C','2C'].forEach(q => {
@@ -977,9 +1112,30 @@ function applyCalendarioFromXlsx(cal) {
       <td class="td-btn"><button class="btn-del" onclick="this.closest('tr').remove();renderCal('2C')">✕</button></td>`;
     tbody.appendChild(tr);
   });
+  // Periodos de exámenes — fechas y festivos
+  const exMap = { 'enero': 'EXEN', 'junio': 'EXJU', 'extraordinaria': 'EXEX' };
+  const exIniId = { 'EXEN': 'ex-EXEN-inicio', 'EXJU': 'ex-EXJU-inicio', 'EXEX': 'ex-EXEX-inicio' };
+  const exFinId = { 'EXEN': 'ex-EXEN-fin',    'EXJU': 'ex-EXJU-fin',    'EXEX': 'ex-EXEX-fin'    };
+  const pe = cal.periodos_examenes || {};
+  for (const [nombre, key] of Object.entries(exMap)) {
+    const p = pe[nombre];
+    if (!p) continue;
+    const iniEl = document.getElementById(exIniId[key]);
+    const finEl = document.getElementById(exFinId[key]);
+    if (iniEl && p.inicio) iniEl.value = p.inicio;
+    if (finEl && p.fin)    finEl.value = p.fin;
+    calDays[key] = {};
+    (p.festivos || []).forEach(f => {
+      if (f.fecha) calDays[key][f.fecha] = { tipo: f.tipo, desc: f.descripcion || '' };
+    });
+  }
   // Redibujar calendarios
   renderCal('1C');
   renderCal('2C');
+  // Solo renderiza exámenes si la tab EX ya está visible (evita errores si aún no se abrió)
+  for (const key of ['EXEN','EXJU','EXEX']) {
+    if (document.getElementById('cal-grid-' + key)) renderCalExamen(key);
+  }
 }
 
 // ─── STEP 5: PREVIEW ─────────────────────────────────────────────────────────
@@ -1112,6 +1268,9 @@ function renderSummary() {
     <b>Estructura:</b> ${e.cursos.length} cursos, ${e.franjas.length} franjas horarias<br>
     <b>Calendario 1C:</b> ${cal['1C'].inicio||'—'} → ${cal['1C'].fin||'—'} · ${f1.length} festivos<br>
     <b>Calendario 2C:</b> ${cal['2C'].inicio||'—'} → ${cal['2C'].fin||'—'} · ${f2.length} festivos · ${vac.length} periodos vacaciones<br>
+    <b>Exámenes Enero:</b> ${cal.periodos_examenes?.enero?.inicio||'—'} → ${cal.periodos_examenes?.enero?.fin||'—'} · ${(cal.periodos_examenes?.enero?.festivos||[]).length} festivos<br>
+    <b>Exámenes Junio:</b> ${cal.periodos_examenes?.junio?.inicio||'—'} → ${cal.periodos_examenes?.junio?.fin||'—'} · ${(cal.periodos_examenes?.junio?.festivos||[]).length} festivos<br>
+    <b>Exámenes Extraord.:</b> ${cal.periodos_examenes?.extraordinaria?.inicio||'—'} → ${cal.periodos_examenes?.extraordinaria?.fin||'—'} · ${(cal.periodos_examenes?.extraordinaria?.festivos||[]).length} festivos<br>
     <b>Asignaturas:</b> ${asignaturas.length} filas<br>
     <b>Importar horario:</b> ${importMode === 'importar' ? `Sí — ${importedClases.length} clases desde Excel` : 'No (horario vacío)'}<br>
     <b>Carpeta destino:</b> horarios/${b.siglas}/
@@ -1881,28 +2040,58 @@ def generate_calendario_template_xlsx():
         cell.border = thin_border()
     ws1.row_dimensions[2].height = 20
 
-    # Filas de datos
-    filas = [
-        ("1C", "Inicio 1er cuatrimestre", ""),
-        ("1C", "Fin 1er cuatrimestre",    ""),
-        ("2C", "Inicio 2º cuatrimestre",  ""),
-        ("2C", "Fin 2º cuatrimestre",     ""),
+    # Filas de datos — periodos lectivos (filas 3-6)
+    VERDE_CLARO = "DCFCE7"
+    ROSA_CLARO  = "FEE2E2"
+    AMBAR_CLARO = "FEF3C7"
+
+    filas_lectivos = [
+        ("1C", "Inicio 1er cuatrimestre", "", row_fill(AZUL_CLARO)),
+        ("1C", "Fin 1er cuatrimestre",    "", row_fill(AZUL_CLARO)),
+        ("2C", "Inicio 2º cuatrimestre",  "", row_fill("FFF8E7")),
+        ("2C", "Fin 2º cuatrimestre",     "", row_fill("FFF8E7")),
     ]
-    fills_periodo = [row_fill(AZUL_CLARO), row_fill(AZUL_CLARO),
-                     row_fill("FFF8E7"),  row_fill("FFF8E7")]
-    for i, (cuatri, campo, fecha) in enumerate(filas, start=3):
+    for i, (cuatri, campo, fecha, fill) in enumerate(filas_lectivos, start=3):
         ws1.cell(row=i, column=1, value=cuatri).font = Font(bold=True, name="Arial", size=10)
         ws1.cell(row=i, column=2, value=campo).font  = cell_font()
         ws1.cell(row=i, column=3, value=fecha).font  = Font(name="Arial", size=10, color="555555")
         for col in range(1, 4):
-            ws1.cell(row=i, column=col).fill      = fills_periodo[i - 3]
+            ws1.cell(row=i, column=col).fill      = fill
             ws1.cell(row=i, column=col).border    = thin_border()
             ws1.cell(row=i, column=col).alignment = vcenter()
         ws1.row_dimensions[i].height = 20
 
-    # Nota de uso
-    ws1.merge_cells("A8:C8")
-    nota = ws1["A8"]
+    # Separador visual (fila 7)
+    ws1.merge_cells("A7:C7")
+    sep = ws1["A7"]
+    sep.value = "── Periodos de Exámenes Finales ──"
+    sep.font  = Font(bold=True, color="FFFFFF", name="Arial", size=9)
+    sep.fill  = hdr_fill("4B5563")
+    sep.alignment = center()
+    ws1.row_dimensions[7].height = 16
+
+    # Filas periodos de exámenes (filas 8-13)
+    filas_examenes = [
+        ("ENERO",    "Inicio conv. enero (1C)",     "", row_fill(VERDE_CLARO)),
+        ("ENERO",    "Fin conv. enero (1C)",         "", row_fill(VERDE_CLARO)),
+        ("JUNIO",    "Inicio conv. junio (2C)",     "", row_fill(ROSA_CLARO)),
+        ("JUNIO",    "Fin conv. junio (2C)",         "", row_fill(ROSA_CLARO)),
+        ("EXTRAORD", "Inicio conv. extraordinaria", "", row_fill(AMBAR_CLARO)),
+        ("EXTRAORD", "Fin conv. extraordinaria",    "", row_fill(AMBAR_CLARO)),
+    ]
+    for i, (cuatri, campo, fecha, fill) in enumerate(filas_examenes, start=8):
+        ws1.cell(row=i, column=1, value=cuatri).font = Font(bold=True, name="Arial", size=10)
+        ws1.cell(row=i, column=2, value=campo).font  = cell_font()
+        ws1.cell(row=i, column=3, value=fecha).font  = Font(name="Arial", size=10, color="555555")
+        for col in range(1, 4):
+            ws1.cell(row=i, column=col).fill      = fill
+            ws1.cell(row=i, column=col).border    = thin_border()
+            ws1.cell(row=i, column=col).alignment = vcenter()
+        ws1.row_dimensions[i].height = 20
+
+    # Nota de uso (fila 15)
+    ws1.merge_cells("A15:C15")
+    nota = ws1["A15"]
     nota.value = "ℹ  Introduce las fechas en formato AAAA-MM-DD  (ej. 2026-09-08)"
     nota.font  = Font(italic=True, color="6A7A8A", name="Arial", size=9)
     nota.alignment = vcenter()
@@ -1934,34 +2123,44 @@ def generate_calendario_template_xlsx():
         cell.border = thin_border()
     ws2.row_dimensions[2].height = 20
 
-    # Validaciones desplegables
-    dv_cuatri = DataValidation(type="list", formula1='"1C,2C"', allow_blank=False, showDropDown=False)
-    dv_tipo   = DataValidation(type="list", formula1='"festivo,no_lectivo"', allow_blank=False, showDropDown=False)
-    dv_cuatri.sqref = "A3:A200"
-    dv_tipo.sqref   = "C3:C200"
+    # Validaciones desplegables — incluye los 3 periodos de examen
+    dv_cuatri = DataValidation(type="list", formula1='"1C,2C,ENERO,JUNIO,EXTRAORD"',
+                               allow_blank=False, showDropDown=False)
+    dv_tipo   = DataValidation(type="list", formula1='"festivo,no_lectivo"',
+                               allow_blank=False, showDropDown=False)
+    dv_cuatri.sqref = "A3:A300"
+    dv_tipo.sqref   = "C3:C300"
     ws2.add_data_validation(dv_cuatri)
     ws2.add_data_validation(dv_tipo)
 
-    # Filas de ejemplo
-    ejemplos = [
-        ("1C", "2026-10-12", "festivo",    "Día de la Hispanidad"),
-        ("1C", "2026-12-08", "festivo",    "Inmaculada Concepción"),
-        ("2C", "2027-03-29", "festivo",    "Lunes de Pascua"),
-        ("2C", "2027-02-12", "no_lectivo", ""),
+    # Colores por periodo
+    fills_ws2 = {
+        "1C_festivo":       row_fill("FEE2E2"),
+        "1C_no_lectivo":    row_fill("FEF3C7"),
+        "2C_festivo":       row_fill("EDE9FE"),
+        "2C_no_lectivo":    row_fill("FEF9C3"),
+        "ENERO_festivo":    row_fill("DCFCE7"),
+        "ENERO_no_lectivo": row_fill("D1FAE5"),
+        "JUNIO_festivo":    row_fill("FEE2E2"),
+        "JUNIO_no_lectivo": row_fill("FECACA"),
+        "EXTRAORD_festivo":    row_fill("FEF3C7"),
+        "EXTRAORD_no_lectivo": row_fill("FDE68A"),
+    }
+    def ej_fill2(cuatri, tipo): return fills_ws2.get(f"{cuatri}_{tipo}", row_fill("F3F4F6"))
+
+    # Filas de ejemplo: lectivos + exámenes
+    ejemplos2 = [
+        ("1C",      "2026-10-12", "festivo",    "Día de la Hispanidad"),
+        ("1C",      "2026-12-08", "festivo",    "Inmaculada Concepción"),
+        ("2C",      "2027-03-29", "festivo",    "Lunes de Pascua"),
+        ("2C",      "2027-02-12", "no_lectivo", ""),
+        ("ENERO",   "2027-01-14", "festivo",    "Ej.: festivo en conv. enero"),
+        ("JUNIO",   "2027-06-04", "no_lectivo", "Ej.: no lectivo en conv. junio"),
+        ("EXTRAORD","2027-07-10", "festivo",    "Ej.: festivo en conv. extraordinaria"),
     ]
-    fill_festivo    = row_fill("FEE2E2")  # rojo suave
-    fill_nolectivo  = row_fill("FEF3C7")  # naranja suave
-    fill_2c_festivo = row_fill("EDE9FE")  # lila suave
-    fill_2c_nol    = row_fill("FEF9C3")   # amarillo suave
-
-    def ejemplo_fill(cuatri, tipo):
-        if cuatri == "1C":
-            return fill_festivo if tipo == "festivo" else fill_nolectivo
-        return fill_2c_festivo if tipo == "festivo" else fill_2c_nol
-
-    for i, (cuatri, fecha, tipo, desc) in enumerate(ejemplos, start=3):
+    for i, (cuatri, fecha, tipo, desc) in enumerate(ejemplos2, start=3):
         row_data = [cuatri, fecha, tipo, desc]
-        f = ejemplo_fill(cuatri, tipo)
+        f = ej_fill2(cuatri, tipo)
         for col, val in enumerate(row_data, start=1):
             cell = ws2.cell(row=i, column=col, value=val)
             cell.font   = cell_font()
@@ -1973,7 +2172,7 @@ def generate_calendario_template_xlsx():
     ws2.column_dimensions["A"].width = 16
     ws2.column_dimensions["B"].width = 24
     ws2.column_dimensions["C"].width = 16
-    ws2.column_dimensions["D"].width = 36
+    ws2.column_dimensions["D"].width = 40
 
     # ════════════════════════════════════════════════════════════════
     # HOJA 3 — Vacaciones (solo 2C)
@@ -2026,59 +2225,87 @@ def parse_calendario_xlsx(xlsx_bytes):
     """Parsea un fichero Excel de calendario y devuelve dict compatible con getCalendario().
     Estructura retornada:
       { '1C': { inicio, fin, festivos: [{fecha, tipo, descripcion}] },
-        '2C': { inicio, fin, festivos: [...], vacaciones: [{inicio, fin, descripcion}] } }
+        '2C': { inicio, fin, festivos: [...], vacaciones: [{inicio, fin, descripcion}] },
+        'periodos_examenes': {
+          'enero':          { inicio, fin, festivos: [...] },
+          'junio':          { inicio, fin, festivos: [...] },
+          'extraordinaria': { inicio, fin, festivos: [...] },
+        }
+      }
     """
     from openpyxl import load_workbook
+
+    def _fecha(val):
+        """Normaliza un valor de celda a string YYYY-MM-DD o ''."""
+        if val is None:
+            return ""
+        if hasattr(val, "strftime"):
+            return val.strftime("%Y-%m-%d")
+        return str(val).strip()
 
     wb = load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
     cal = {
         "1C": {"inicio": "", "fin": "", "festivos": []},
         "2C": {"inicio": "", "fin": "", "festivos": [], "vacaciones": []},
+        "periodos_examenes": {
+            "enero":          {"inicio": "", "fin": "", "festivos": []},
+            "junio":          {"inicio": "", "fin": "", "festivos": []},
+            "extraordinaria": {"inicio": "", "fin": "", "festivos": []},
+        },
     }
 
     # ── Periodos ─────────────────────────────────────────────────────────────
     if "Periodos" in wb.sheetnames:
         ws = wb["Periodos"]
+        # Mapa: campo normalizado → (destino, clave)
+        # destino puede ser un cuatrimestre ('1C','2C') o una conv. de examen
         campo_map = {
-            "inicio 1er cuatrimestre": ("1C", "inicio"),
-            "fin 1er cuatrimestre":    ("1C", "fin"),
-            "inicio 2º cuatrimestre":  ("2C", "inicio"),
-            "fin 2º cuatrimestre":     ("2C", "fin"),
-            "inicio 2o cuatrimestre":  ("2C", "inicio"),
-            "fin 2o cuatrimestre":     ("2C", "fin"),
+            "inicio 1er cuatrimestre":       ("1C",    "inicio"),
+            "fin 1er cuatrimestre":           ("1C",    "fin"),
+            "inicio 2º cuatrimestre":         ("2C",    "inicio"),
+            "fin 2º cuatrimestre":            ("2C",    "fin"),
+            "inicio 2o cuatrimestre":         ("2C",    "inicio"),
+            "fin 2o cuatrimestre":            ("2C",    "fin"),
+            "inicio conv. enero (1c)":        ("enero",          "inicio"),
+            "fin conv. enero (1c)":           ("enero",          "fin"),
+            "inicio conv. junio (2c)":        ("junio",          "inicio"),
+            "fin conv. junio (2c)":           ("junio",          "fin"),
+            "inicio conv. extraordinaria":    ("extraordinaria", "inicio"),
+            "fin conv. extraordinaria":       ("extraordinaria", "fin"),
         }
         for row in ws.iter_rows(min_row=3, values_only=True):
             if not row or len(row) < 3:
                 continue
-            cuatri_raw = str(row[0] or "").strip().upper()
-            campo_raw  = str(row[1] or "").strip().lower()
-            fecha_raw  = str(row[2] or "").strip() if row[2] is not None else ""
-            # fechas pueden venir como datetime desde openpyxl
-            if hasattr(row[2], "strftime"):
-                fecha_raw = row[2].strftime("%Y-%m-%d")
-            key = campo_map.get(campo_raw)
-            if key:
-                q, field = key
-                cal[q][field] = fecha_raw
+            campo_raw = str(row[1] or "").strip().lower()
+            fecha_raw = _fecha(row[2])
+            dest = campo_map.get(campo_raw)
+            if dest and fecha_raw:
+                target, field = dest
+                if target in ("1C", "2C"):
+                    cal[target][field] = fecha_raw
+                else:
+                    cal["periodos_examenes"][target][field] = fecha_raw
 
     # ── Días especiales ───────────────────────────────────────────────────────
-    if "Días especiales" in wb.sheetnames or "Dias especiales" in wb.sheetnames:
-        ws_name = "Días especiales" if "Días especiales" in wb.sheetnames else "Dias especiales"
-        ws = wb[ws_name]
+    # Acepta cuatrimestre: 1C, 2C, ENERO, JUNIO, EXTRAORD
+    ex_map = {"ENERO": "enero", "JUNIO": "junio", "EXTRAORD": "extraordinaria"}
+    ws2_name = next((n for n in wb.sheetnames if n.lower().startswith("d") and "especial" in n.lower()), None)
+    if ws2_name:
+        ws = wb[ws2_name]
         for row in ws.iter_rows(min_row=3, values_only=True):
             if not row or len(row) < 3:
                 continue
             cuatri = str(row[0] or "").strip().upper()
-            fecha  = str(row[1] or "").strip() if row[1] is not None else ""
-            if hasattr(row[1], "strftime"):
-                fecha = row[1].strftime("%Y-%m-%d")
+            fecha  = _fecha(row[1])
             tipo   = str(row[2] or "").strip().lower()
             desc   = str(row[3] or "").strip() if len(row) > 3 and row[3] is not None else ""
-            if cuatri not in ("1C", "2C") or not fecha:
+            if not fecha or tipo not in ("festivo", "no_lectivo"):
                 continue
-            if tipo not in ("festivo", "no_lectivo"):
-                continue
-            cal[cuatri]["festivos"].append({"fecha": fecha, "tipo": tipo, "descripcion": desc})
+            entry = {"fecha": fecha, "tipo": tipo, "descripcion": desc}
+            if cuatri in ("1C", "2C"):
+                cal[cuatri]["festivos"].append(entry)
+            elif cuatri in ex_map:
+                cal["periodos_examenes"][ex_map[cuatri]]["festivos"].append(entry)
 
     # ── Vacaciones ────────────────────────────────────────────────────────────
     if "Vacaciones" in wb.sheetnames:
@@ -2086,12 +2313,8 @@ def parse_calendario_xlsx(xlsx_bytes):
         for row in ws.iter_rows(min_row=3, values_only=True):
             if not row or len(row) < 2:
                 continue
-            ini = str(row[0] or "").strip() if row[0] is not None else ""
-            fin = str(row[1] or "").strip() if row[1] is not None else ""
-            if hasattr(row[0], "strftime"):
-                ini = row[0].strftime("%Y-%m-%d")
-            if hasattr(row[1], "strftime"):
-                fin = row[1].strftime("%Y-%m-%d")
+            ini  = _fecha(row[0])
+            fin  = _fecha(row[1])
             desc = str(row[2] or "").strip() if len(row) > 2 and row[2] is not None else ""
             if ini and fin:
                 cal["2C"]["vacaciones"].append({"inicio": ini, "fin": fin, "descripcion": desc})

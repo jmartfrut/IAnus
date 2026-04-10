@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.21.1"
+APP_VERSION = "1.22.12"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -308,6 +308,7 @@ def api_get_all(params):
         "fichas": fichas_by_codigo,          # keyed by asignatura.codigo
         "fichas_override": fichas_override,  # lista de codigos con override manual
         "destacadas": destacadas,            # lista de "codigo::grupo_num" destacadas
+        "config": CFG,                       # config.json completo del grado
     }
 
     for g in grupos:

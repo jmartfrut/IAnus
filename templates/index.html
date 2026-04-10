@@ -111,7 +111,7 @@
       <button class="tab-btn" onclick="setView('stats',this)">Estadisticas</button>
       <button class="tab-btn" onclick="setView('parciales',this)">&#128221; Parciales</button>
       <button class="tab-btn" onclick="setView('finales',this)">&#127891; Finales</button>
-      <button class="tab-btn" onclick="setView('festivos',this)">&#128197; Festivos</button>
+      <button class="tab-btn" onclick="setView('festivos',this)">&#128197; Calendario</button>
     </div>
   </div>
   <div class="toolbar-group" style="margin-left:auto">
@@ -152,8 +152,8 @@
     <div class="cal-wrap">
       <div class="cal-top">
         <div>
-          <h3>&#128197; Calendario de D&iacute;as Festivos y No Lectivos</h3>
-          <p>Haz clic en un d&iacute;a lectivo para marcarlo/desmarcarlo. Los cambios se propagan autom&aacute;ticamente a <strong>todos los horarios</strong>.</p>
+          <h3>&#128197; Calendario Acad&eacute;mico del Grado</h3>
+          <p>Haz clic en un d&iacute;a lectivo para marcarlo/desmarcarlo. Los cambios se propagan autom&aacute;ticamente a <strong>todos los horarios</strong> y a los per&iacute;odos de ex&aacute;menes finales.</p>
         </div>
         <button class="btn btn-outline btn-sm" onclick="loadFestivos()">&#8635; Actualizar</button>
       </div>
@@ -161,10 +161,12 @@
         <span class="cal-leg-item"><span class="cal-dot cal-dot-festivo"></span> Festivo nacional</span>
         <span class="cal-leg-item"><span class="cal-dot cal-dot-no_lectivo"></span> No lectivo / Puente</span>
         <span class="cal-leg-item"><span class="cal-dot cal-dot-lectivo"></span> D&iacute;a lectivo</span>
+        <span class="cal-leg-item"><span class="cal-dot cal-dot-periodo_examen"></span> Per&iacute;odo de ex&aacute;menes</span>
         <span class="cal-leg-item"><span class="cal-dot cal-dot-finde"></span> Fin de semana</span>
         <span class="cal-leg-item"><span class="cal-dot cal-dot-fuera"></span> Fuera de cuatrimestre</span>
       </div>
       <div id="calendarGrid" class="cal-grid"></div>
+      <div id="calendarFestivosList"></div>
     </div>
   </div>
 </div>

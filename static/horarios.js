@@ -1218,14 +1218,47 @@ let currentFinalPeriod = '1';
 function getFinalesPeriods() {
   const parts = (CURSO_STR || '2025-2026').split('-');
   const yEnd = parseInt(parts[1]) || 2026;
-  return {
+  const periods = {
     '1': { label: 'Enero &mdash; 1er Cuatrimestre', shortLabel: 'Enero',
-           start: `${yEnd}-01-07`, end: `${yEnd}-01-31`, color: '#1e40af' },
+           start: `${yEnd}-01-07`, end: `${yEnd}-01-31`, color: '#1e40af', festivos: [] },
     '2': { label: 'Junio &mdash; 2&ordm; Cuatrimestre', shortLabel: 'Junio',
-           start: `${yEnd}-05-31`, end: `${yEnd}-06-22`, color: '#166534' },
+           start: `${yEnd}-05-31`, end: `${yEnd}-06-22`, color: '#166534', festivos: [] },
     '3': { label: 'Extraordinaria (Jun&ndash;Jul)', shortLabel: 'Extraord.',
-           start: `${yEnd}-06-24`, end: `${yEnd}-07-17`, color: '#7c2d12' },
+           start: `${yEnd}-06-24`, end: `${yEnd}-07-17`, color: '#7c2d12', festivos: [] },
   };
+  // Si el config tiene periodos_examenes configurados, los usa en lugar de los defaults
+  const cfg_pe = DB?.config?.calendario?.periodos_examenes;
+  if (cfg_pe) {
+    const map = { 'enero': '1', 'junio': '2', 'extraordinaria': '3' };
+    for (const [nombre, idx] of Object.entries(map)) {
+      const p = cfg_pe[nombre];
+      if (!p) continue;
+      if (p.inicio) periods[idx].start = p.inicio;
+      if (p.fin)    periods[idx].end   = p.fin;
+      // Normalizar festivos: acepta array de strings 'YYYY-MM-DD' u objetos {fecha, ...}
+      periods[idx].festivos = (p.festivos || []).map(f => typeof f === 'string' ? f : f.fecha);
+    }
+  }
+
+  // Incluir festivos del calendario académico (FESTIVOS_MAP) en cada período de exámenes
+  if (typeof FESTIVOS_MAP !== 'undefined' && FESTIVOS_MAP) {
+    for (const idx of ['1', '2', '3']) {
+      const period = periods[idx];
+      const [sy, sm, sd] = period.start.split('-').map(Number);
+      const [ey, em, ed] = period.end.split('-').map(Number);
+      const startDate = new Date(sy, sm - 1, sd);
+      const endDate   = new Date(ey, em - 1, ed);
+      for (const [fecha] of Object.entries(FESTIVOS_MAP)) {
+        const [fy, fm, fd] = fecha.split('-').map(Number);
+        const fDate = new Date(fy, fm - 1, fd);
+        if (fDate >= startDate && fDate <= endDate && !period.festivos.includes(fecha)) {
+          period.festivos.push(fecha);
+        }
+      }
+    }
+  }
+
+  return periods;
 }
 
 function getWeeksInPeriod(startStr, endStr) {
@@ -1375,9 +1408,11 @@ function renderFinales() {
   }
 
   // ── Leyenda ──
+  const festivoSet = new Set(period.festivos || []);
   html += `<div class="parc-legend" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
     ${cursos.map(c=>`<div class="parc-legend-item"><span class="parc-legend-dot ${cursoBg[c]}"></span>${c}&ordm; (${countByCurso[c]})</div>`).join('')}
     <div class="parc-legend-item"><span class="parc-legend-dot" style="background:#f59e0b;border-radius:50%"></span>Conflicto turno</div>
+    ${festivoSet.size > 0 ? `<div class="parc-legend-item"><span class="parc-legend-dot" style="background:#fecaca;border:1.5px solid #ef4444;border-radius:3px"></span>Festivo/No lectivo</div>` : ''}
     <div class="parc-legend-item" style="color:var(--text-light);font-size:.73rem">&#128204; Clic en celda = a&ntilde;adir examen</div>
   </div>`;
 
@@ -1413,6 +1448,17 @@ function renderFinales() {
           continue;
         }
         const iso     = dayObj.iso;
+        // Día festivo/no lectivo: celda bloqueada visualmente
+        if (festivoSet.has(iso)) {
+          if (idx === 0) {
+            const [,fm,fd] = iso.split('-').map(Number);
+            html += `<td class="final-cell final-cell-festivo" rowspan="${cursos.length}"
+              title="Festivo/No lectivo">
+              <span class="final-festivo-label">&#128683;<br>${fd}/${fm}</span>
+            </td>`;
+          }
+          continue;
+        }
         const entries = byDate[iso]?.[curso] || [];
         let cellConflict = false;
         let cellHtml = '';
@@ -1518,14 +1564,16 @@ function renderFinales() {
 // ─── DISTRIBUCIÓN AUTOMÁTICA ─────────────────────────────────────────────────
 
 /* Devuelve todos los días (Lun-Sáb) dentro del rango de fechas del período */
-function _getDaysInPeriod(startStr, endStr) {
+function _getDaysInPeriod(startStr, endStr, festivos = []) {
+  const festSet = new Set(Array.isArray(festivos) ? festivos : []);
   const [sy,sm,sd] = startStr.split('-').map(Number);
   const [ey,em,ed] = endStr.split('-').map(Number);
   const start = new Date(sy, sm-1, sd);
   const end   = new Date(ey, em-1, ed);
   const days  = [];
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    if (d.getDay() !== 0) days.push(isoLocal(new Date(d))); // excluir domingos
+    const iso = isoLocal(new Date(d));
+    if (d.getDay() !== 0 && !festSet.has(iso)) days.push(iso); // excluir domingos y festivos
   }
   return days;
 }
@@ -1761,8 +1809,8 @@ async function autoDistributeExams() {
     const period  = periods[currentFinalPeriod];
     const cuatChk = { '1': '1C', '2': '2C', '3': null }[currentFinalPeriod];
 
-    // 1. Días disponibles del período (Lun-Sáb)
-    const allDays = _getDaysInPeriod(period.start, period.end);
+    // 1. Días disponibles del período (Lun-Sáb, excluyendo festivos del periodo)
+    const allDays = _getDaysInPeriod(period.start, period.end, period.festivos || []);
 
     // 2. Asignaturas marcadas por curso (excluir desmarcadas)
     const asigMap = _getAsigsByCursoCuat(cuatChk);
@@ -3306,14 +3354,63 @@ function renderCalendar() {
 
   /* Determinar el rango del curso */
   const [yStart, yEnd] = (CURSO_STR || '2026-2027').split('-').map(Number);
-  /* Meses del calendario académico: Sep año_start … Jun año_end */
+  /* Meses del calendario académico: Sep año_start … Jul año_end */
   const months = [];
   for (let m = 8; m <= 11; m++) months.push([yStart, m]);   // Sep-Dic
-  for (let m = 0; m <= 5;  m++) months.push([yEnd,   m]);   // Ene-Jun
+  for (let m = 0; m <= 6;  m++) months.push([yEnd,   m]);   // Ene-Jul
 
   const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                        'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const DAY_ABBR = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+
+  /* Construir conjunto de fechas en período de exámenes finales */
+  const examenDatesSet = new Set();
+  const examenPeriodLabels = {};
+  try {
+    const periods = getFinalesPeriods();
+    for (const [, period] of Object.entries(periods)) {
+      const [sy, sm, sd] = period.start.split('-').map(Number);
+      const [ey, em, ed] = period.end.split('-').map(Number);
+      const cur = new Date(sy, sm - 1, sd);
+      const end = new Date(ey, em - 1, ed);
+      while (cur <= end) {
+        const iso = isoLocal(cur);
+        examenDatesSet.add(iso);
+        if (!examenPeriodLabels[iso]) examenPeriodLabels[iso] = period.shortLabel || 'Exámenes';
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+  } catch(e) { /* getFinalesPeriods puede no estar disponible todavía */ }
+
+  /* Festivos definidos en config.json — fuente complementaria a FESTIVOS_MAP.
+     Lee TODAS las secciones: calendario.1C, calendario.2C y periodos_examenes.* */
+  const configFestivosMap = {};
+  function _addConfigFestivos(list) {
+    for (const f of (list || [])) {
+      const fecha = (typeof f === 'string') ? f : f.fecha;
+      if (!fecha) continue;
+      if (configFestivosMap[fecha]) continue; // no sobreescribir si ya está
+      configFestivosMap[fecha] = {
+        tipo:        ((typeof f === 'object') ? f.tipo        : null) || 'no_lectivo',
+        descripcion: ((typeof f === 'object') ? f.descripcion : null) || ''
+      };
+    }
+  }
+  try {
+    const cal = DB?.config?.calendario;
+    if (cal) {
+      // Festivos de cuatrimestre (1C y 2C)
+      _addConfigFestivos(cal['1C']?.festivos);
+      _addConfigFestivos(cal['2C']?.festivos);
+      // Festivos de períodos de exámenes
+      const pe = cal.periodos_examenes;
+      if (pe) {
+        for (const periodo of Object.values(pe)) {
+          _addConfigFestivos(periodo.festivos);
+        }
+      }
+    }
+  } catch(e) { /* sin config */ }
 
   let html = '';
   for (const [year, monthIdx] of months) {
@@ -3337,22 +3434,37 @@ function renderCalendar() {
       const d = new Date(year, monthIdx, day);
       const wd = d.getDay(); // 0=Dom,6=Sáb
       const iso = isoLocal(d);   // ← fecha local, sin desfase UTC
+      const isSunday  = (wd === 0);
       const isWeekend = (wd === 0 || wd === 6);
       const inSemana  = !!CAL_SEMANA_MAP[iso];
-      const festivo   = FESTIVOS_MAP[iso];
+      const inExamen  = examenDatesSet.has(iso);
+      // Festivo: primero BD (FESTIVOS_MAP), luego config.json (configFestivosMap)
+      const festivo   = FESTIVOS_MAP[iso] || configFestivosMap[iso] || null;
 
       let cls = 'cal-day ';
       let tooltip = '';
       let onclick = '';
 
-      if (isWeekend) {
+      if (isSunday) {
+        // Los domingos siempre son fin de semana, sin excepción
+        cls += 'finde';
+      } else if (festivo) {
+        // Festivos/no-lectivos tienen SIEMPRE prioridad de color, estén o no en período de examen
+        const tipoFestivo = festivo.tipo || 'no_lectivo';
+        cls += tipoFestivo;
+        const descBase = festivo.descripcion || tipoFestivo;
+        tooltip = inExamen ? `${descBase} · ${examenPeriodLabels[iso] || 'Exámenes'}` : descBase;
+        onclick = `onclick="openFestivoPopup('${iso}',event)"`;
+      } else if (inExamen) {
+        // Día laborable de período de exámenes (lunes–sábado, sin festivo marcado)
+        cls += 'periodo_examen';
+        tooltip = `Período de exámenes — ${examenPeriodLabels[iso] || ''}`;
+        onclick = `onclick="openFestivoPopup('${iso}',event)"`;
+      } else if (isWeekend) {
+        // Sábado fuera de período de exámenes
         cls += 'finde';
       } else if (!inSemana) {
         cls += 'fuera';
-      } else if (festivo) {
-        cls += festivo.tipo;
-        tooltip = festivo.descripcion || festivo.tipo;
-        onclick = `onclick="openFestivoPopup('${iso}',event)"`;
       } else {
         cls += 'lectivo';
         onclick = `onclick="openFestivoPopup('${iso}',event)"`;
@@ -3366,6 +3478,47 @@ function renderCalendar() {
     html += `</div></div></div>`;
   }
   grid.innerHTML = html;
+
+  /* ── Lista de festivos y no-lectivos debajo del calendario ── */
+  const listContainer = document.getElementById('calendarFestivosList');
+  if (!listContainer) return;
+
+  // Unir ambas fuentes; la BD tiene prioridad sobre config
+  const allFestivos = {};
+  for (const [fecha, info] of Object.entries(configFestivosMap)) allFestivos[fecha] = info;
+  for (const [fecha, info] of Object.entries(FESTIVOS_MAP || {}))  allFestivos[fecha] = info;
+
+  // Excluir domingos (no son días lectivos ni de examen, no deben aparecer en la lista)
+  const entries = Object.entries(allFestivos)
+    .filter(([fecha]) => { const [y,m,d] = fecha.split('-').map(Number); return new Date(y, m-1, d).getDay() !== 0; })
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (!entries.length) { listContainer.innerHTML = ''; return; }
+
+  const MONTH_NAMES_SHORT = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const DAY_NAMES = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+  let listHtml = `<div class="cal-festivos-list">
+    <h4 class="cal-festivos-title">&#128204; Días no lectivos y festivos del curso</h4>
+    <div class="cal-festivos-items">`;
+
+  for (const [fecha, info] of entries) {
+    const [fy, fm, fd] = fecha.split('-').map(Number);
+    const dObj = new Date(fy, fm - 1, fd);
+    const dowStr = DAY_NAMES[dObj.getDay()];
+    const dateLabel = `${dowStr} ${fd} ${MONTH_NAMES_SHORT[fm - 1]} ${fy}`;
+    const tipoCls  = info.tipo === 'festivo' ? 'festivo' : 'no_lectivo';
+    const tipoText = info.tipo === 'festivo' ? 'Festivo' : 'No lectivo';
+    const desc = info.descripcion ? info.descripcion : '—';
+    listHtml += `<div class="cal-festivos-item">
+      <span class="cal-festivos-date">${dateLabel}</span>
+      <span class="cal-festivos-badge cal-festivos-badge-${tipoCls}">${tipoText}</span>
+      <span class="cal-festivos-desc">${desc}</span>
+    </div>`;
+  }
+
+  listHtml += `</div></div>`;
+  listContainer.innerHTML = listHtml;
 }
 
 function openFestivoPopup(fecha, evt) {

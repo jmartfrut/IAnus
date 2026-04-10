@@ -313,6 +313,7 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .cal-dot-no_lectivo{background:#f59e0b}
 .cal-dot-festivo{background:#e74c3c}
 .cal-dot-lectivo{background:#e8f4ea;border:1.5px solid #27ae60}
+.cal-dot-periodo_examen{background:#bfdbfe;border:1.5px solid #2563eb}
 .cal-dot-finde{background:#e8ecf0;border:1.5px solid #b0bec5}
 .cal-dot-fuera{background:#f3f4f6;border:1.5px solid #d1d5db}
 .cal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
@@ -333,8 +334,22 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .cal-day.no_lectivo:hover{background:#fde68a;transform:scale(1.12);z-index:1}
 .cal-day.festivo{background:#fee2e2;color:#991b1b;cursor:pointer;border-color:#e74c3c}
 .cal-day.festivo:hover{background:#fecaca;transform:scale(1.12);z-index:1}
+.cal-day.periodo_examen{background:#dbeafe;color:#1e3a8a;cursor:pointer;border-color:#2563eb}
+.cal-day.periodo_examen:hover{background:#bfdbfe;transform:scale(1.12);z-index:1;box-shadow:0 2px 8px rgba(37,99,235,.3)}
 .cal-day .cal-day-num{font-size:.73rem;font-weight:700}
 .cal-day .cal-day-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.6}
+/* ── Lista festivos bajo el calendario ── */
+.cal-festivos-list{margin-top:28px;background:#fff;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);overflow:hidden}
+.cal-festivos-title{font-size:.88rem;font-weight:800;color:var(--primary);padding:12px 18px;border-bottom:1px solid var(--border,#e2e8f0);margin:0}
+.cal-festivos-items{display:flex;flex-direction:column}
+.cal-festivos-item{display:flex;align-items:center;gap:14px;padding:9px 18px;border-bottom:1px solid #f1f5f9;font-size:.83rem}
+.cal-festivos-item:last-child{border-bottom:none}
+.cal-festivos-item:hover{background:#f8fafc}
+.cal-festivos-date{min-width:160px;font-weight:700;color:var(--text,#2d3748);text-transform:capitalize}
+.cal-festivos-badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;min-width:82px;text-align:center}
+.cal-festivos-badge-festivo{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.cal-festivos-badge-no_lectivo{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.cal-festivos-desc{color:var(--text-light,#64748b);flex:1}
 /* Popup festivo */
 .festivo-popup{position:fixed;z-index:9999;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);padding:22px 24px;min-width:280px;max-width:340px;border-top:4px solid var(--primary)}
 .festivo-popup h4{font-size:.95rem;font-weight:800;color:var(--primary);margin-bottom:14px}
@@ -367,6 +382,9 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .final-cell:hover{background:#f0f9ff!important}
 .final-cell-out{background:#f3f4f6!important;cursor:default!important}
 .final-cell-out:hover{background:#f3f4f6!important}
+.final-cell-festivo{background:#fef2f2!important;cursor:default!important;text-align:center;vertical-align:middle!important;border-left:3px solid #ef4444!important}
+.final-cell-festivo:hover{background:#fef2f2!important}
+.final-festivo-label{font-size:.72rem;color:#b91c1c;font-weight:600;line-height:1.4}
 .final-add-btn{display:block;width:100%;text-align:center;font-size:.62rem;color:#c7d2e0;padding:3px 0;cursor:pointer;border-radius:3px;margin-top:1px}
 .final-add-btn:hover{background:#e8f0fe;color:#2563eb}
 .final-entry{display:flex;flex-direction:column;gap:1px;padding:3px 5px;border-radius:5px;margin:2px 0;text-align:left;border-left:3px solid;cursor:grab}
