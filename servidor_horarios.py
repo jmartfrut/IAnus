@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.25.0"
+APP_VERSION = "1.27.0"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -1470,10 +1470,14 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             # ── Obtener mapa semana+día → fecha ISO ──
             date_map = _parse_semana_date_ranges(conn)
             # date_map: { 'YYYY-MM-DD': {'cuatrimestre': '1C'|'2C', 'numero': N, 'dia': 'LUNES'|...} }
+            # _parse_semana_date_ranges solo genera Lun-Vie; derivamos el Sábado desde cada Lunes.
             # Invertir para buscar: (cuatrimestre, numero, dia) → fecha ISO
             inv_map = {}
             for iso, info in date_map.items():
                 inv_map[(info['cuatrimestre'], info['numero'], info['dia'])] = iso
+                if info['dia'] == 'LUNES':
+                    sabado_iso = (date.fromisoformat(iso) + timedelta(days=5)).isoformat()
+                    inv_map[(info['cuatrimestre'], info['numero'], 'SÁBADO')] = sabado_iso
 
             # ── Consultar todos los parciales (EXP / EXF) ──
             rows = conn.execute("""

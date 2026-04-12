@@ -580,8 +580,10 @@ function buildCumulativePanel() {
   const total    = weeks.length;
   const weeksUpTo = weeks.slice(0, upTo + 1);
 
-  // Reutilizamos computeGroupStats con las semanas acumuladas hasta ahora
-  const asigs = computeGroupStats(weeksUpTo).filter(a =>
+  // Reutilizamos computeGroupStats con las semanas acumuladas hasta ahora.
+  // Se pasa `weeks` (todas) como segundo arg para que la pre-pasada de subgrupos
+  // use el conjunto completo, no solo las semanas hasta la semana actual.
+  const asigs = computeGroupStats(weeksUpTo, weeks).filter(a =>
     a.counts.teoria > 0 || a.counts.af3 > 0 || a.counts.ps > 0 || a.counts.parcial > 0 ||
     Object.keys(a.infoBySubgrupo).length > 0 || Object.keys(a.labBySubgrupo).length > 0
   );
@@ -792,12 +794,96 @@ function getActType(cls) {
   return 'teoria';
 }
 
-function computeGroupStats(weeks) {
+/**
+ * Expande el campo subgrupo en una lista de subgrupos individuales.
+ *   "1,2,3,4"  →  ["1","2","3","4"]   (lista separada por comas)
+ *   "1-4"      →  ["1","2","3","4"]   (rango numérico inclusivo)
+ *   "2"        →  ["2"]               (subgrupo único)
+ *   ""         →  [""]               (sin subgrupo — sesión compartida)
+ * Cualquier otro valor (p. ej. "todos") se devuelve sin modificar como ["todos"].
+ */
+function expandSubgrupos(sg) {
+  sg = (sg || '').trim();
+  // Rango: "1-4"
+  const rangeMatch = sg.match(/^(\d+)-(\d+)$/);
+  if (rangeMatch) {
+    const from = parseInt(rangeMatch[1], 10);
+    const to   = parseInt(rangeMatch[2], 10);
+    const result = [];
+    for (let i = from; i <= to; i++) result.push(String(i));
+    return result;
+  }
+  // Lista: "1,2,3" o "1, 2, 3"
+  if (sg.includes(',')) {
+    return sg.split(',').map(s => s.trim()).filter(s => s !== '');
+  }
+  // Subgrupo simple, vacío o cualquier otro valor
+  return [sg];
+}
+
+/**
+ * Pre-pasada: recorre todas las clases del grupo y recoge, POR TIPO ('lab' / 'info'),
+ * el conjunto global de subgrupos numéricos explícitos (excluyendo "", "todos", "Todos").
+ * Se recopila a nivel de grupo (no por asignatura) para que asignaturas donde TODAS
+ * las sesiones son "todos" puedan expandirse usando los subgrupos de otras asignaturas
+ * del mismo tipo en el mismo grupo.
+ * Devuelve: { lab: Set<string>, info: Set<string> }
+ */
+function collectKnownSubgrupos(weeks) {
+  const known = { lab: new Set(), info: new Set() };
+  weeks.forEach(w => {
+    w.clases.forEach(c => {
+      if (!c.asig_codigo || c.es_no_lectivo) return;
+      const tipo = getActType(c);
+      if (tipo !== 'info' && tipo !== 'lab') return;
+      const rawSg = (c.subgrupo || '').trim();
+      if (!rawSg || rawSg.toLowerCase() === 'todos') return; // no cuenta como explícito
+      expandSubgrupos(rawSg).forEach(sg => known[tipo].add(sg));
+    });
+  });
+  return known;
+}
+
+/**
+ * Resuelve el campo subgrupo de una clase en la lista de subgrupos a los que
+ * se debe acumular esa sesión.
+ *   "todos" / "Todos"  →  todos los subgrupos numéricos conocidos para ese tipo en el grupo;
+ *                          si no hay ninguno conocido, devuelve [''] (sesión compartida sin desglose).
+ *   ""       →  ['']  (sesión compartida — se contabiliza una vez, sin desglose)
+ *   "1,2,3"  →  ["1","2","3"]  (expandSubgrupos)
+ *   "1-4"    →  ["1","2","3","4"]  (expandSubgrupos)
+ *   "2"      →  ["2"]
+ */
+function resolveSubgrupos(rawSg, asigCod, tipo, knownSubgrupos) {
+  const sg = (rawSg || '').trim();
+  if (sg.toLowerCase() === 'todos') {
+    // Expandir al conjunto global de subgrupos numéricos para este tipo en el grupo
+    const known = knownSubgrupos[tipo]; // tipo es 'lab' o 'info'
+    if (known && known.size > 0) {
+      return [...known].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+    }
+    // Sin subgrupos conocidos en el grupo: sesión sin desglose
+    return [''];
+  }
+  // "" → [''], "2" → ["2"], "1,2,3" → ["1","2","3"], "1-4" → ["1","2","3","4"]
+  return expandSubgrupos(sg);
+}
+
+function computeGroupStats(weeks, allWeeks) {
   // Devuelve array de {nombre, codigo, counts, infoBySubgrupo, labBySubgrupo}
   // INFO y LAB se desglozan por subgrupo; el resto se deduplica ignorando subgrupo.
+  //
+  // allWeeks: semanas completas del grupo (opcional). Si se pasa, la pre-pasada de
+  // collectKnownSubgrupos usa TODAS las semanas para conocer el conjunto completo de
+  // subgrupos numéricos, aunque `weeks` sea solo una porción (panel acumulado).
   const asigData = {};
   const seenShared   = new Set(); // teoria / ps / parcial — dedup sin subgrupo
   const seenPractica = new Set(); // info / lab — dedup con subgrupo
+
+  // Pre-pasada: recoger subgrupos numéricos explícitos para poder expandir "todos".
+  // Se usa allWeeks (todas las semanas) para evitar que en vistas parciales (panel
+  // acumulado semana N) falten subgrupos que aparezcan por primera vez en semanas posteriores.
+  const knownSgs = collectKnownSubgrupos(allWeeks || weeks);
 
   weeks.forEach(w => {
     w.clases.forEach(c => {
@@ -817,13 +903,17 @@ function computeGroupStats(weeks) {
       const d = asigData[c.asig_codigo];
 
       if (tipo === 'info' || tipo === 'lab') {
-        // Dedup por subgrupo: cada subgrupo cuenta sus propias sesiones
-        const sg = (c.subgrupo || '').trim();
-        const dedupKey = `${c.asig_codigo}|${tipo}|${sg}|${w.numero}|${c.dia}|${c.franja_id}`;
-        if (seenPractica.has(dedupKey)) return;
-        seenPractica.add(dedupKey);
-        const map = tipo === 'info' ? d.infoBySubgrupo : d.labBySubgrupo;
-        map[sg] = (map[sg] || 0) + 1;
+        // Dedup por subgrupo: cada subgrupo cuenta sus propias sesiones.
+        // El campo subgrupo puede ser: "", "todos"/"Todos", "2", "1,2,3" o "1-4" (rango).
+        const rawSg = (c.subgrupo || '').trim();
+        const sgs   = resolveSubgrupos(rawSg, c.asig_codigo, tipo, knownSgs);
+        const map   = tipo === 'info' ? d.infoBySubgrupo : d.labBySubgrupo;
+        sgs.forEach(sg => {
+          const dedupKey = `${c.asig_codigo}|${tipo}|${sg}|${w.numero}|${c.dia}|${c.franja_id}`;
+          if (seenPractica.has(dedupKey)) return;
+          seenPractica.add(dedupKey);
+          map[sg] = (map[sg] || 0) + 1;
+        });
       } else {
         // teoria / ps / parcial: dedup global (todos los subgrupos comparten la misma sesión)
         const dedupKey = `${c.asig_codigo}|${tipo}|${w.numero}|${c.dia}|${c.franja_id}`;
@@ -2278,16 +2368,18 @@ function computeEvolucionData(weeks) {
   const asigEvol = {};
   const seenPrac = new Set();
 
+  // Pre-pasada: recoger subgrupos numéricos explícitos para poder expandir "todos"
+  const knownSgs = collectKnownSubgrupos(weeks);
+
   weeks.forEach((w, wi) => {
     w.clases.forEach(c => {
       if (!c.asig_codigo || c.es_no_lectivo) return;
       const tipo = getActType(c);
       if (tipo !== 'lab' && tipo !== 'info') return;
 
-      const sg = (c.subgrupo || '').trim() || 'todos';
-      const dk = `${c.asig_codigo}|${tipo}|${sg}|${w.numero}|${c.dia}|${c.franja_id}`;
-      if (seenPrac.has(dk)) return;
-      seenPrac.add(dk);
+      const rawSg = (c.subgrupo || '').trim();
+      // resolveSubgrupos expande "todos"/"Todos"/"" → subgrupos reales, rango, lista o simple
+      const sgs = resolveSubgrupos(rawSg, c.asig_codigo, tipo, knownSgs);
 
       if (!asigEvol[c.asig_codigo]) {
         asigEvol[c.asig_codigo] = {
@@ -2299,9 +2391,14 @@ function computeEvolucionData(weeks) {
         // Inicializar arrays a 0 para todas las semanas
         asigEvol[c.asig_codigo]._n = weeks.length;
       }
-      const target = tipo === 'lab' ? asigEvol[c.asig_codigo].sgLab : asigEvol[c.asig_codigo].sgInfo;
-      if (!target[sg]) target[sg] = new Array(weeks.length).fill(0);
-      target[sg][wi]++;
+      sgs.forEach(sg => {
+        const dk = `${c.asig_codigo}|${tipo}|${sg}|${w.numero}|${c.dia}|${c.franja_id}`;
+        if (seenPrac.has(dk)) return;
+        seenPrac.add(dk);
+        const target = tipo === 'lab' ? asigEvol[c.asig_codigo].sgLab : asigEvol[c.asig_codigo].sgInfo;
+        if (!target[sg]) target[sg] = new Array(weeks.length).fill(0);
+        target[sg][wi]++;
+      });
     });
   });
 
@@ -2639,6 +2736,9 @@ function closeModal() {
   // Ocultar el aviso de sábado al cerrar el modal
   const warn = document.getElementById('sabadoWarning');
   if (warn) warn.style.display = 'none';
+  // Ocultar bloque conjunto
+  const rowConj = document.getElementById('rowConjunto');
+  if (rowConj) rowConj.style.display = 'none';
 }
 function toggleNoLectivo() {
   const no = document.getElementById('fNoLectivo').checked;
@@ -2659,6 +2759,35 @@ function onTipoChange() {
   } else {
     row.style.display = 'none';
   }
+  updateConjuntoRow(tipo);
+}
+
+/**
+ * Muestra u oculta el bloque "Examen conjunto" con checkboxes de los otros grupos
+ * del mismo curso/cuatrimestre. Solo aplica cuando tipo === 'EXP'.
+ */
+function updateConjuntoRow(tipo) {
+  const rowConjunto = document.getElementById('rowConjunto');
+  const container   = document.getElementById('conjuntoGrupos');
+  if (tipo !== 'EXP' || !DB) {
+    rowConjunto.style.display = 'none';
+    return;
+  }
+  const prefix = currentCurso + '_' + currentCuat + '_grupo_';
+  const otherGroups = Object.keys(DB.grupos)
+    .filter(k => k.startsWith(prefix) && k !== prefix + currentGroup)
+    .sort();
+  if (otherGroups.length === 0) {
+    rowConjunto.style.display = 'none';
+    return;
+  }
+  container.innerHTML = otherGroups.map(k => {
+    const gNum = k.slice(prefix.length);
+    return `<label style="display:flex;gap:5px;align-items:center;cursor:pointer">
+      <input type="checkbox" class="fConjuntoGrupo" value="${k}"> Grupo&nbsp;${gNum}
+    </label>`;
+  }).join('');
+  rowConjunto.style.display = 'block';
 }
 
 // ─── DRAG & DROP ───
@@ -2790,7 +2919,7 @@ function openEdit(claseId) {
   const week = getCurrentWeek();
   const cls = week.clases.find(c => c.id === claseId);
   if (!cls) return;
-  editCtx = { mode: 'edit', claseId, semana_id: week.semana_id };
+  editCtx = { mode: 'edit', claseId, semana_id: week.semana_id, dia: cls.dia, franja_id: cls.franja_id, semana_numero: week.numero };
   document.getElementById('modalTitle').textContent = 'Editar Clase';
   document.getElementById('modalSubtitle').textContent = week.descripcion + ' · ' + cls.dia + ' · ' + cls.franja_label;
   document.getElementById('addFields').style.display = 'none';
@@ -2813,13 +2942,14 @@ function openEdit(claseId) {
     document.getElementById('fAfCatAF5').checked = false;
     document.getElementById('fAfCatAF6').checked = false;
   }
+  updateConjuntoRow(cls.tipo || '');
   toggleNoLectivo();
   document.getElementById('modalOverlay').classList.add('open');
 }
 
 function openAdd(semanaId, dia, franjaId, isDesdoble=false) {
-  editCtx = { mode: 'add', semana_id: semanaId, dia, franja_id: franjaId, force_insert: isDesdoble };
   const week = getCurrentWeek();
+  editCtx = { mode: 'add', semana_id: semanaId, dia, franja_id: franjaId, force_insert: isDesdoble, semana_numero: week ? week.numero : null };
   const franja = DB.franjas.find(f => f.id === franjaId);
   document.getElementById('modalTitle').textContent = isDesdoble ? '&#9851; Añadir Desdoble' : 'Nueva Clase';
   document.getElementById('modalSubtitle').textContent = week.descripcion + ' · ' + dia + ' · ' + (franja ? franja.label : '') + (isDesdoble ? ' · (segunda asignatura en paralelo)' : '');
@@ -2837,6 +2967,8 @@ function openAdd(semanaId, dia, franjaId, isDesdoble=false) {
   document.getElementById('rowAfCat').style.display = 'none';
   document.getElementById('fAfCatAF5').checked = false;
   document.getElementById('fAfCatAF6').checked = false;
+  // Reset conjunto row
+  updateConjuntoRow('');
   toggleNoLectivo();
   document.getElementById('modalOverlay').classList.add('open');
 }
@@ -2897,9 +3029,69 @@ async function saveSlot() {
     return;
   }
 
+  // Propagar a grupos marcados como "conjunto"
+  const conjuntoKeys = [...document.querySelectorAll('.fConjuntoGrupo:checked')].map(el => el.value);
+  if (conjuntoKeys.length > 0) {
+    await _saveConjunto(conjuntoKeys, payload, editCtx);
+  }
+
   closeModal();
   await loadData();
-  showToast('Guardado en base de datos');
+  const conjuntoMsg = conjuntoKeys.length > 0 ? ` (+ ${conjuntoKeys.length} grupo${conjuntoKeys.length > 1 ? 's' : ''} conjunto)` : '';
+  showToast('Guardado en base de datos' + conjuntoMsg);
+}
+
+/**
+ * Propaga un EXP a los grupos seleccionados como "conjunto".
+ * En modo add: crea la clase en la semana equivalente (por numero) de cada grupo.
+ * En modo edit: actualiza la clase existente en ese slot, o la crea si no existe.
+ */
+async function _saveConjunto(groupKeys, payload, ctx) {
+  const semanaNumero = ctx.semana_numero;
+  const dia         = ctx.mode === 'edit' ? ctx.dia       : payload.dia;
+  const franjaId    = ctx.mode === 'edit' ? ctx.franja_id : payload.franja_id;
+
+  for (const groupKey of groupKeys) {
+    const grupo = DB.grupos[groupKey];
+    if (!grupo) continue;
+
+    // Encontrar la semana equivalente por número
+    const semana = semanaNumero != null
+      ? grupo.semanas.find(s => s.numero === semanaNumero)
+      : null;
+    if (!semana) continue;
+
+    if (ctx.mode === 'edit') {
+      // Buscar clase existente en ese dia+franja del grupo destino
+      const existing = semana.clases.find(c =>
+        c.dia === dia && c.franja_id === franjaId && !c.es_no_lectivo
+      );
+      if (existing) {
+        // Actualizar la clase existente
+        await api('/api/clase/update', { ...payload, id: existing.id, asignatura_id: payload.asignatura_id });
+      } else {
+        // No existe → crear
+        await api('/api/clase/create', {
+          ...payload,
+          semana_id: semana.semana_id,
+          dia,
+          franja_id: franjaId,
+          scope: 'single',
+          force_insert: false
+        });
+      }
+    } else {
+      // Modo add: crear en la semana correspondiente del grupo destino
+      // Respetar el scope seleccionado (single/all/from) para este grupo también
+      await api('/api/clase/create', {
+        ...payload,
+        semana_id: semana.semana_id,
+        dia,
+        franja_id: franjaId,
+        force_insert: false
+      });
+    }
+  }
 }
 
 async function deleteSlot() {
