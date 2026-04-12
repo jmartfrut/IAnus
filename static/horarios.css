@@ -263,6 +263,7 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .parc-conflict-turno{font-size:.68rem;font-weight:700;padding:1px 5px;border-radius:3px}
 .parc-conflict-detail{color:var(--text-light)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--success);color:#fff;padding:12px 20px;border-radius:8px;font-weight:600;font-size:.88rem;box-shadow:0 4px 12px rgba(0,0,0,.2);display:none;z-index:2000}
+.toast.toast-error{background:#dc2626}
 .search-highlight{background:#fff176!important}
 .saving-indicator{position:fixed;top:12px;right:20px;background:var(--accent);color:#fff;padding:6px 14px;border-radius:6px;font-size:.78rem;font-weight:700;display:none;z-index:2000;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 @media(max-width:768px){.toolbar{padding:10px 15px}.main{padding:16px 15px}header{padding:14px 16px}header h1{font-size:1.1rem}}
@@ -441,3 +442,10 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .final-popup label{display:block;font-size:.76rem;font-weight:700;color:var(--text-light);text-transform:uppercase;margin-bottom:5px;margin-top:10px}
 .final-popup input,.final-popup select{width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.88rem;box-sizing:border-box}
 .final-popup .popup-btns{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;flex-wrap:wrap}
+
+/* ── Toggle sábado ── */
+.btn-toggle-sabado{margin-left:auto;opacity:.8;transition:opacity .15s,background .15s,color .15s}
+.btn-toggle-sabado:hover{opacity:1}
+.btn-toggle-sabado.btn-active{background:var(--primary);color:#fff;border-color:var(--primary);opacity:1}
+.sch-th-day.sab,.sch-cell.sab{background:rgba(220,38,38,.04);border-left:2px solid #fca5a5}
+.sch-th-day.sab{color:#b91c1c;font-style:italic}

@@ -60,11 +60,11 @@ SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ── Constantes de mapeo ──────────────────────────────────────────────────────
 
 DAY_NUMBER = {
-    'LUNES': 1, 'MARTES': 2, 'MIÉRCOLES': 3, 'JUEVES': 4, 'VIERNES': 5
+    'LUNES': 1, 'MARTES': 2, 'MIÉRCOLES': 3, 'JUEVES': 4, 'VIERNES': 5, 'SÁBADO': 6
 }
 DAY_EN = {
     'LUNES': 'Monday', 'MARTES': 'Tuesday',
-    'MIÉRCOLES': 'Wednesday', 'JUEVES': 'Thursday', 'VIERNES': 'Friday'
+    'MIÉRCOLES': 'Wednesday', 'JUEVES': 'Thursday', 'VIERNES': 'Friday', 'SÁBADO': 'Saturday'
 }
 MESES_ES = {
     'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4,

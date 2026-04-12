@@ -249,6 +249,11 @@
       <button class="btn btn-outline btn-sm" onclick="prevWeek()">&#9664; Anterior</button>
       <div class="week-dots" id="weekDots"></div>
       <button class="btn btn-outline btn-sm" onclick="nextWeek()">Siguiente &#9654;</button>
+      <button id="btnToggleSabado" class="btn btn-outline btn-sm btn-toggle-sabado"
+              onclick="toggleSabado()"
+              title="Mostrar la columna del sábado en esta semana para añadir un examen (EXP)">
+        &#128197; Mostrar sábado
+      </button>
     </div>
     <div id="weekLabel" style="margin-bottom:14px;font-size:.95rem;color:var(--primary);font-weight:700;text-align:center"></div>
     <div class="schedule-container" id="scheduleGrid"></div>
@@ -326,7 +331,7 @@
     </div>
     <div class="form-row" style="margin-top:8px">
       <label class="form-label">Tipo de actividad</label>
-      <select id="fTipo" class="form-control" onchange="onTipoChange()">
+      <select id="fTipo" class="form-control" onchange="onTipoChange(); checkSabadoWarning()">
         <option value="">— Sin especificar —</option>
       </select>
     </div>
@@ -352,9 +357,13 @@
       <div class="form-row-2">
         <div class="form-row" style="margin-bottom:0">
           <label class="form-label">Dia</label>
-          <select id="fDia" class="form-control">
+          <select id="fDia" class="form-control" onchange="checkSabadoWarning()">
             <option>LUNES</option><option>MARTES</option><option>MIÉRCOLES</option><option>JUEVES</option><option>VIERNES</option>
+            <option>SÁBADO</option>
           </select>
+          <div id="sabadoWarning" style="display:none;margin-top:5px;padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:.78rem;color:#b91c1c;font-weight:600">
+            &#9888; El sábado solo admite actividades de tipo <strong>EXP</strong> (examen parcial).
+          </div>
         </div>
         <div class="form-row" style="margin-bottom:0">
           <label class="form-label">Franja horaria</label>

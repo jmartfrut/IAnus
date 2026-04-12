@@ -3,6 +3,48 @@ let currentCurso = '1', currentCuat = '1C', currentGroup = '1', currentWeekIdx =
 let editCtx = null;
 let _classroomsAll = [];   // aulas cargadas desde /api/classrooms
 const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
+// Mapa día → clase CSS. Escalable: añadir aquí si se soportan más días especiales.
+const DAYS_CLS_MAP = {
+  'LUNES':'lun','MARTES':'mar','MIÉRCOLES':'mie','JUEVES':'jue','VIERNES':'vie','SÁBADO':'sab'
+};
+// showSabado es un estado TEMPORAL y LOCAL a la semana actual.
+// Se resetea al cambiar de semana, grupo o cuatrimestre.
+// No se persiste en localStorage porque su propósito es solo forzar la columna
+// del sábado mientras el usuario añade un EXP en la semana activa.
+let showSabado = false;
+
+/**
+ * Devuelve los días activos para el calendario.
+ *
+ * @param {object}  [week]        - Semana a renderizar. Sin argumento → modo global.
+ * @param {boolean} [applyToggle] - Si true, el toggle showSabado puede forzar el sábado
+ *                                  aunque la semana no tenga clases en ese día.
+ *                                  Solo se pasa true desde la vista interactiva (renderWeek).
+ *
+ * Lógica:
+ *   - applyToggle && showSabado  → sábado siempre (el usuario lo ha pedido explícitamente)
+ *   - week con clases en sábado  → sábado por datos
+ *   - modo global (_anyGlobalSabado) → sábado si hay alguno en la BD (para Parciales)
+ *   - en cualquier otro caso     → solo Lun-Vie
+ */
+function getActiveDays(week, applyToggle = false) {
+  if (applyToggle && showSabado) return [...DAYS, 'SÁBADO'];
+  if (week !== undefined) {
+    return week.clases.some(c => c.dia === 'SÁBADO') ? [...DAYS, 'SÁBADO'] : [...DAYS];
+  }
+  return _anyGlobalSabado() ? [...DAYS, 'SÁBADO'] : [...DAYS];
+}
+
+/** Comprueba si cualquier semana de cualquier grupo tiene al menos una clase en sábado */
+function _anyGlobalSabado() {
+  if (!DB) return false;
+  for (const grupo of Object.values(DB.grupos)) {
+    for (const semana of grupo.semanas) {
+      if (semana.clases.some(c => c.dia === 'SÁBADO' && !c.es_no_lectivo)) return true;
+    }
+  }
+  return false;
+}
 const COLORS = ['color-0','color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12','color-13','color-14'];
 // Paleta de colores por curso (soporta hasta 5 cursos; extensible añadiendo entradas)
 const _CURSO_PAL = [
@@ -270,6 +312,7 @@ async function loadData() {
   updateGrupoOptions();
   updateAulaDatalist();
   updateHeaderSubtitle();
+  _updateSabadoToggleUI();
   render();
 }
 
@@ -445,7 +488,8 @@ async function toggleDtie(codigo, grupo_num, act_type, subgrupo) {
 
 function buildWeekTableHTML(week, interactive) {
   const franjas = DB.franjas;
-  const days = DAYS;
+  // applyToggle=interactive: el toggle solo actúa en la vista en vivo, no en PDFs ni "todas"
+  const days = getActiveDays(week, interactive);
   const search = interactive ? document.getElementById('searchInput').value.toLowerCase() : '';
   // classMap ahora almacena arrays (puede haber múltiples entradas por slot)
   const classMap = {};
@@ -462,7 +506,7 @@ function buildWeekTableHTML(week, interactive) {
   const noLecRendered = {};
   let html = `<table class="schedule-table"><thead><tr>
     <th class="sch-th-time">Franja</th>
-    ${days.map(d => `<th class="sch-th-day">${d}</th>`).join('')}
+    ${days.map(d => `<th class="sch-th-day${d==='SÁBADO'?' sab':''}">${d}</th>`).join('')}
   </tr></thead><tbody>`;
   franjas.forEach(f => {
     if (f.orden === 4) {
@@ -473,10 +517,11 @@ function buildWeekTableHTML(week, interactive) {
     }
     html += `<tr><td class="sch-time-cell">${f.label}</td>`;
     days.forEach(day => {
+      const dayCls = day === 'SÁBADO' ? ' sab' : ''; // clase visual para columna especial
       if (noLectivoDays[day]) {
         if (!noLecRendered[day]) {
           noLecRendered[day] = true;
-          html += `<td class="sch-cell sch-no-lectivo" rowspan="${franjas.length + 1}">
+          html += `<td class="sch-cell${dayCls} sch-no-lectivo" rowspan="${franjas.length + 1}">
             <div class="no-lectivo-full">&#128683;<br>NO LECTIVO</div></td>`;
         }
         return;
@@ -489,10 +534,10 @@ function buildWeekTableHTML(week, interactive) {
       if (!arr.length) {
         // Celda vacía
         html += interactive
-          ? `<td class="sch-cell sch-empty"${dropAttrs} onclick="openAdd(${week.semana_id},'${day}',${f.id})"><span class="empty-label">+ Anadir</span></td>`
-          : `<td class="sch-cell sch-empty"></td>`;
+          ? `<td class="sch-cell${dayCls} sch-empty"${dropAttrs} onclick="openAdd(${week.semana_id},'${day}',${f.id})"><span class="empty-label">+ Anadir</span></td>`
+          : `<td class="sch-cell${dayCls} sch-empty"></td>`;
       } else if (arr.length === 1 && arr[0].es_no_lectivo) {
-        html += `<td class="sch-cell sch-no-lectivo-single"><span class="no-lectivo-label">&#128683; No lectivo</span></td>`;
+        html += `<td class="sch-cell${dayCls} sch-no-lectivo-single"><span class="no-lectivo-label">&#128683; No lectivo</span></td>`;
       } else if (arr.length === 1) {
         // Celda normal — una sola asignatura
         const cls = arr[0];
@@ -503,7 +548,7 @@ function buildWeekTableHTML(week, interactive) {
         const addDesdobleBtn = interactive
           ? `<div class="split-add" onclick="event.stopPropagation();openAdd(${week.semana_id},'${day}',${f.id},true)">+ Desdoble</div>`
           : '';
-        html += `<td class="sch-cell${destacadaCls} ${match?'search-highlight':''}"${onclick}${dropAttrs}>
+        html += `<td class="sch-cell${dayCls}${destacadaCls} ${match?'search-highlight':''}"${onclick}${dropAttrs}>
           ${buildSubjectCard(cls, color, search, interactive)}
           ${addDesdobleBtn}
         </td>`;
@@ -516,7 +561,7 @@ function buildWeekTableHTML(week, interactive) {
         const addBtn = interactive
           ? `<div class="split-add" onclick="openAdd(${week.semana_id},'${day}',${f.id},true)">+ Desdoble</div>`
           : '';
-        html += `<td class="sch-cell sch-split">
+        html += `<td class="sch-cell${dayCls} sch-split">
           <div class="split-badge">${interactive ? '&#9851; Desdoble' : 'Subgrupos paralelos'}</div>
           <div class="split-cards">${cards}</div>
           ${addBtn}
@@ -645,6 +690,43 @@ function toggleCum() {
   const btn  = document.getElementById('cumToggleBtn');
   if (body) body.style.display = cumVisible ? '' : 'none';
   if (btn)  btn.innerHTML = cumVisible ? '&#9650; Ocultar' : '&#9660; Ver';
+}
+
+// ─── TOGGLE SÁBADO ──────────────────────────────────────────────────────────
+/**
+ * Muestra u oculta el aviso "sábado solo EXP" en el modal de nueva clase.
+ * Se llama desde onchange de fDia y fTipo.
+ */
+function checkSabadoWarning() {
+  const dia  = document.getElementById('fDia')?.value;
+  const tipo = document.getElementById('fTipo')?.value?.trim();
+  const warn = document.getElementById('sabadoWarning');
+  if (!warn) return;
+  warn.style.display = (dia === 'SÁBADO' && tipo !== 'EXP') ? 'block' : 'none';
+}
+
+/**
+ * Activa/desactiva la columna del sábado en la semana actualmente visible.
+ * Estado LOCAL: se resetea al cambiar de semana, grupo o cuatrimestre.
+ */
+function toggleSabado() {
+  showSabado = !showSabado;
+  _updateSabadoToggleUI();
+  render();
+}
+
+function _updateSabadoToggleUI() {
+  const btn = document.getElementById('btnToggleSabado');
+  if (!btn) return;
+  if (showSabado) {
+    btn.classList.add('btn-active');
+    btn.textContent = '📅 Ocultar sábado';
+    btn.title = 'Ocultar la columna del sábado en esta semana';
+  } else {
+    btn.classList.remove('btn-active');
+    btn.textContent = '📅 Mostrar sábado';
+    btn.title = 'Mostrar la columna del sábado en esta semana para añadir un examen (EXP)';
+  }
 }
 
 function renderWeek() {
@@ -1001,8 +1083,8 @@ function buildActTable(allAsigs, groupKey, opts = {}) {
 // ─── VISTA PARCIALES ────────────────────────────────────────────────────────
 function renderParciales() {
   const cuat = currentCuat;
-  const dias = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
-  const diaCls = ['lun','mar','mie','jue','vie'];
+  const dias = getActiveDays();                       // respeta el toggle showSabado
+  const diaCls = dias.map(d => DAYS_CLS_MAP[d]);      // clases CSS derivadas del mapa
   const { cursos, cursoBg, entryBg, borderColors, pairs: _pairsP } = _buildCursosData('parc');
   const cursoLabel = Object.fromEntries(cursos.map(c => [c, c + 'º']));
   // Franjas 1-3 = mañana, 4-6 = tarde
@@ -1206,6 +1288,13 @@ function renderParciales() {
     </div>`;
   }
   html += `</div>`;
+
+  // ── 8. Botón exportar PDF ──
+  html += `<div style="display:flex;justify-content:flex-end;padding:10px 0 4px">
+    <button class="btn-export-pdf" id="btnExportParcPdf" onclick="exportParcialesPdf()">
+      &#128438; Exportar PDF
+    </button>
+  </div>`;
 
   document.getElementById('parcGrid').innerHTML = html;
 }
@@ -1940,6 +2029,31 @@ async function exportFinalesPdf() {
   }
 }
 
+async function exportParcialesPdf() {
+  const btn = document.getElementById('btnExportParcPdf');
+  if (btn) { btn.disabled = true; btn.textContent = '\u23f3 Generando\u2026'; }
+  try {
+    const url = `/api/parciales/export-pdf?cuat=${encodeURIComponent(currentCuat)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const cuatLabel = currentCuat === '1C' ? '1C' : '2C';
+    a.download = `Parciales_${EXPORT_PREFIX}_${CURSO_STR.replace('-','_')}_${cuatLabel}.pdf`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('\u2714 PDF generado');
+  } catch(e) {
+    alert('Error al generar el PDF: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128438; Exportar PDF'; }
+  }
+}
+
 // ─── FIN DISTRIBUCIÓN AUTOMÁTICA ─────────────────────────────────────────────
 
 function openFinalAdd(iso, curso) {
@@ -2437,6 +2551,7 @@ function onFilterChange() {
   currentCuat = document.getElementById('cuatSelect').value;
   currentGroup = document.getElementById('grupoSelect').value;
   currentWeekIdx = 0;
+  _resetSabadoToggle();
   updateGrupoOptions();
   updateHeaderSubtitle();
   populateAsignaturaSelect();
@@ -2492,9 +2607,14 @@ function updateHeaderSubtitle() {
   const aula = (g && g.aula) ? ' · Aula: ' + formatAula(g.aula) : '';
   document.getElementById('headerSubtitle').textContent = ordinals[currentCurso] + ' Curso · ' + DEGREE_ACRONYM + ' · ' + INSTITUTION_ACRONYM + aula;
 }
-function goWeek(i) { currentWeekIdx = i; render(); }
-function prevWeek() { if (currentWeekIdx > 0) { currentWeekIdx--; render(); } }
-function nextWeek() { if (currentWeekIdx < getWeeks().length-1) { currentWeekIdx++; render(); } }
+function goWeek(i)   { currentWeekIdx = i; _resetSabadoToggle(); render(); }
+function prevWeek()  { if (currentWeekIdx > 0) { currentWeekIdx--; _resetSabadoToggle(); render(); } }
+function nextWeek()  { if (currentWeekIdx < getWeeks().length-1) { currentWeekIdx++; _resetSabadoToggle(); render(); } }
+
+/** Apaga el toggle de sábado al cambiar de semana, grupo o cuatrimestre */
+function _resetSabadoToggle() {
+  if (showSabado) { showSabado = false; _updateSabadoToggleUI(); }
+}
 function setView(v, btn) {
   currentView = v;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -2513,7 +2633,13 @@ function setView(v, btn) {
 function showStats() { setView('stats', null); }
 
 // ─── MODAL ───
-function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); editCtx = null; }
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+  editCtx = null;
+  // Ocultar el aviso de sábado al cerrar el modal
+  const warn = document.getElementById('sabadoWarning');
+  if (warn) warn.style.display = 'none';
+}
 function toggleNoLectivo() {
   const no = document.getElementById('fNoLectivo').checked;
   ['fAsignatura','fAula','fTipo','fSubgrupo','fObs'].forEach(id => document.getElementById(id).disabled = no);
@@ -2744,17 +2870,31 @@ async function saveSlot() {
     contenido: noLec ? 'NO LECTIVO' : (asig ? '['+asig.codigo+'] '+asig.nombre : '')
   };
 
+  let res;
   if (editCtx.mode === 'edit') {
     payload.id = editCtx.claseId;
     payload.asignatura_id = asigId;
-    await api('/api/clase/update', payload);
+    res = await api('/api/clase/update', payload);
   } else {
     payload.semana_id = editCtx.semana_id;
     payload.dia = document.getElementById('fDia').value;
     payload.franja_id = parseInt(document.getElementById('fHora').value);
     payload.scope = document.getElementById('fScope').value;
     payload.force_insert = editCtx.force_insert || false;
-    await api('/api/clase/create', payload);
+
+    // Validación client-side: el sábado solo admite EXP
+    if (payload.dia === 'SÁBADO' && payload.tipo !== 'EXP') {
+      showToast('⚠️ El sábado solo admite actividades de tipo EXP (examen parcial).', true);
+      return; // el modal permanece abierto para que el usuario corrija
+    }
+
+    res = await api('/api/clase/create', payload);
+  }
+
+  // Si el servidor devuelve un error, mostrarlo sin cerrar el modal
+  if (res && res.error) {
+    showToast('⚠️ ' + res.error, true);
+    return;
   }
 
   closeModal();
@@ -3280,11 +3420,12 @@ function _escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-function showToast(msg) {
+function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  t.classList.toggle('toast-error', !!isError);
   t.style.display = 'block';
-  setTimeout(() => t.style.display = 'none', 2500);
+  setTimeout(() => { t.style.display = 'none'; t.classList.remove('toast-error'); }, isError ? 4000 : 2500);
 }
 
 // ─── FESTIVOS CALENDAR ───

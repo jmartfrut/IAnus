@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.23.6"
+APP_VERSION = "1.25.0"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -374,6 +374,11 @@ def api_create_clase(data):
     semana_id = data.get("semana_id")
     dia = data.get("dia")
     franja_id = data.get("franja_id")
+
+    # El sábado es un día especial: solo se permiten actividades de tipo EXP.
+    if dia == 'SÁBADO' and data.get("tipo", "") != 'EXP':
+        conn.close()
+        return {"error": "El sábado solo admite actividades de tipo EXP (examen parcial)."}
 
     if scope == "single":
         semana_ids = [semana_id]
@@ -1123,6 +1128,15 @@ def api_move_clase(data):
 
     semana_id = origen["semana_id"]
 
+    # Validar: si el destino es sábado, la clase origen debe ser de tipo EXP.
+    if nueva_dia == 'SÁBADO':
+        tipo_origen = conn.execute(
+            "SELECT tipo FROM clases WHERE id=?", (clase_id,)
+        ).fetchone()
+        if not tipo_origen or tipo_origen["tipo"] != 'EXP':
+            conn.close()
+            return {"error": "Solo se pueden mover al sábado actividades de tipo EXP (examen parcial)."}
+
     # Buscar clases en el slot destino (dentro de la misma semana)
     destinos = conn.execute(
         "SELECT id FROM clases WHERE semana_id=? AND dia=? AND franja_id=?",
@@ -1200,6 +1214,9 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
         elif parsed.path == "/api/finales/export-pdf":
             params = parse_qs(parsed.query)
             self.serve_finales_pdf(params)
+        elif parsed.path == "/api/parciales/export-pdf":
+            params = parse_qs(parsed.query)
+            self.serve_parciales_pdf(params)
         elif parsed.path == "/api/logo":
             self.serve_logo()
         elif parsed.path == "/api/logo_svg":
@@ -1420,6 +1437,121 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             pdf_bytes = mod.generar_pdf_finales_all(periods_data, CURSO_LABEL, degree_name=DEGREE_NAME, degree_acronym=DEGREE_ACRONYM)
             safe_label = CURSO_LABEL.replace('-', '_')
             filename   = f"Finales_{EXPORT_PREFIX}_{safe_label}.pdf"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", len(pdf_bytes))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(pdf_bytes)
+        except Exception as e:
+            self.send_json({"error": str(e), "trace": traceback.format_exc()}, 500)
+
+    def serve_parciales_pdf(self, params):
+        """GET /api/parciales/export-pdf?cuat=1C|2C — genera PDF de parciales en formato finales."""
+        import importlib.util, traceback
+        from datetime import date, timedelta
+        try:
+            mod_path = os.path.join(SCRIPT_DIR, "tools", "exportar_finales_pdf.py")
+            if not os.path.exists(mod_path):
+                self.send_json({"error": "exportar_finales_pdf.py no encontrado"}, 500)
+                return
+
+            spec = importlib.util.spec_from_file_location("exportar_finales_pdf", mod_path)
+            mod  = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            cuat_filter = (params.get('cuat', [''])[0] or '').strip().upper() or None  # '1C', '2C' o None
+
+            conn = get_db()
+            conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+
+            # ── Obtener mapa semana+día → fecha ISO ──
+            date_map = _parse_semana_date_ranges(conn)
+            # date_map: { 'YYYY-MM-DD': {'cuatrimestre': '1C'|'2C', 'numero': N, 'dia': 'LUNES'|...} }
+            # Invertir para buscar: (cuatrimestre, numero, dia) → fecha ISO
+            inv_map = {}
+            for iso, info in date_map.items():
+                inv_map[(info['cuatrimestre'], info['numero'], info['dia'])] = iso
+
+            # ── Consultar todos los parciales (EXP / EXF) ──
+            rows = conn.execute("""
+                SELECT
+                    g.curso,
+                    g.cuatrimestre,
+                    s.numero  AS semana_num,
+                    c.dia,
+                    c.tipo,
+                    c.observacion,
+                    a.codigo  AS asig_codigo,
+                    a.nombre  AS asig_nombre,
+                    f.orden   AS franja_orden
+                FROM clases c
+                JOIN semanas     s ON s.id = c.semana_id
+                JOIN grupos      g ON g.id = s.grupo_id
+                JOIN asignaturas a ON a.id = c.asignatura_id
+                JOIN franjas     f ON f.id = c.franja_id
+                WHERE c.tipo IN ('EXP','EXF')
+                  AND (c.es_no_lectivo IS NULL OR c.es_no_lectivo = 0)
+                ORDER BY g.cuatrimestre, s.numero, c.dia, g.curso
+            """).fetchall()
+            conn.close()
+
+            # ── Agrupar y deduplicar por (fecha, curso, asig_codigo, tipo) ──
+            seen = {}
+            for r in rows:
+                cuat = r['cuatrimestre']
+                if cuat_filter and cuat != cuat_filter:
+                    continue
+                iso = inv_map.get((cuat, r['semana_num'], r['dia']))
+                if not iso:
+                    continue
+                turno = 'mañana' if r['franja_orden'] <= 3 else 'tarde'
+                key = (iso, str(r['curso']), r['asig_codigo'], r['tipo'])
+                if key not in seen:
+                    obs = ('Examen final' if r['tipo'] == 'EXF' else 'Examen parcial')
+                    if r['observacion']:
+                        obs += ' · ' + r['observacion']
+                    seen[key] = {
+                        'fecha':       iso,
+                        'curso':       r['curso'],
+                        'asig_codigo': r['asig_codigo'] or '',
+                        'asig_nombre': r['asig_nombre'] or '',
+                        'turno':       turno,
+                        'observacion': obs,
+                    }
+
+            exams = sorted(seen.values(), key=lambda e: (e['fecha'], str(e['curso'])))
+
+            if not exams:
+                self.send_json({"error": "No hay exámenes parciales registrados"}, 404)
+                return
+
+            # ── Calcular rango de fechas ──
+            fechas = [date.fromisoformat(e['fecha']) for e in exams]
+            start_iso = min(fechas).isoformat()
+            end_iso   = max(fechas).isoformat()
+
+            # ── Determinar etiqueta del cuatrimestre ──
+            if cuat_filter == '1C':
+                cuat_label = '1er Cuatrimestre'
+            elif cuat_filter == '2C':
+                cuat_label = '2o Cuatrimestre'
+            else:
+                cuat_label = '1C + 2C'
+
+            periodo_label = f"Exámenes Parciales — {cuat_label}"
+            periods_data = [{'label': periodo_label, 'start': start_iso, 'end': end_iso, 'exams': exams}]
+
+            pdf_bytes = mod.generar_pdf_finales_all(
+                periods_data, CURSO_LABEL,
+                degree_name=DEGREE_NAME, degree_acronym=DEGREE_ACRONYM
+            )
+
+            safe_label  = CURSO_LABEL.replace('-', '_')
+            safe_cuat   = (cuat_filter or 'todos').replace(' ', '_')
+            filename    = f"Parciales_{EXPORT_PREFIX}_{safe_label}_{safe_cuat}.pdf"
 
             self.send_response(200)
             self.send_header("Content-Type", "application/pdf")
