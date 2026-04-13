@@ -1,6 +1,7 @@
 let DB = null;
 let currentCurso = '1', currentCuat = '1C', currentGroup = '1', currentWeekIdx = 0, currentView = 'semana';
 let editCtx = null;
+let _currentEditConjuntoId = null;  // conjunto_id de la clase en edición (null si nueva o sin vínculo)
 let _classroomsAll = [];   // aulas cargadas desde /api/classrooms
 const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
 // Mapa día → clase CSS. Escalable: añadir aquí si se soportan más días especiales.
@@ -2742,6 +2743,7 @@ function showStats() { setView('stats', null); }
 function closeModal() {
   document.getElementById('modalOverlay').classList.remove('open');
   editCtx = null;
+  _currentEditConjuntoId = null;
   // Ocultar el aviso de sábado al cerrar el modal
   const warn = document.getElementById('sabadoWarning');
   if (warn) warn.style.display = 'none';
@@ -2768,17 +2770,21 @@ function onTipoChange() {
   } else {
     row.style.display = 'none';
   }
-  updateConjuntoRow(tipo);
+  // Al cambiar tipo manualmente, no propagamos conjunto_id existente (reset visual)
+  updateConjuntoRow(tipo, null);
 }
 
 /**
  * Muestra u oculta el bloque "Examen conjunto" con checkboxes de los otros grupos
- * del mismo curso/cuatrimestre. Solo aplica cuando tipo === 'EXP'.
+ * del mismo curso/cuatrimestre. Aplica cuando tipo === 'EXP' o 'EXF'.
+ *
+ * @param {string} tipo           - Tipo de actividad actual.
+ * @param {string|null} conjuntoId - conjunto_id de la clase en edición (null = sin vínculo).
  */
-function updateConjuntoRow(tipo) {
+function updateConjuntoRow(tipo, conjuntoId = null) {
   const rowConjunto = document.getElementById('rowConjunto');
   const container   = document.getElementById('conjuntoGrupos');
-  if (tipo !== 'EXP' || !DB) {
+  if (!['EXP', 'EXF'].includes(tipo) || !DB) {
     rowConjunto.style.display = 'none';
     return;
   }
@@ -2790,12 +2796,53 @@ function updateConjuntoRow(tipo) {
     rowConjunto.style.display = 'none';
     return;
   }
+
+  // Calcular qué grupos ya están vinculados (mismo conjunto_id en la BD)
+  const linkedGroupKeys = new Set();
+  if (conjuntoId) {
+    for (const [gKey, gData] of Object.entries(DB.grupos)) {
+      for (const sem of gData.semanas) {
+        if (sem.clases.some(c => c.conjunto_id === conjuntoId)) {
+          linkedGroupKeys.add(gKey);
+          break;
+        }
+      }
+    }
+  }
+
+  const hasLinked = linkedGroupKeys.size > 0;
+
+  // Etiqueta dinámica según estado
+  const labelEl = rowConjunto.querySelector('.form-label');
+  if (labelEl) {
+    labelEl.innerHTML = hasLinked
+      ? '🔗 Examen vinculado &mdash; grupos ligados (los cambios se propagan automáticamente)'
+      : '📋 Examen conjunto &mdash; vincular también a';
+  }
+
+  // Checkboxes: grupos ya vinculados → pre-marcados con data-linked
   container.innerHTML = otherGroups.map(k => {
-    const gNum = k.slice(prefix.length);
-    return `<label style="display:flex;gap:5px;align-items:center;cursor:pointer">
-      <input type="checkbox" class="fConjuntoGrupo" value="${k}"> Grupo&nbsp;${gNum}
+    const gNum     = k.slice(prefix.length);
+    const isLinked = linkedGroupKeys.has(k);
+    return `<label style="display:flex;gap:5px;align-items:center;cursor:pointer;${isLinked ? 'color:#15803d;font-weight:600' : ''}">
+      <input type="checkbox" class="fConjuntoGrupo" value="${k}"
+             ${isLinked ? 'checked data-linked="true"' : ''}> Grupo&nbsp;${gNum}${isLinked ? ' 🔗' : ''}
     </label>`;
   }).join('');
+
+  // Botón "Desvincular todo" solo si hay vínculos existentes
+  const existingBtn = rowConjunto.querySelector('.btnDesv');
+  if (existingBtn) existingBtn.remove();
+  if (hasLinked) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btnDesv';
+    btn.textContent = '🔓 Desvincular todo';
+    btn.style.cssText = 'margin-top:8px;font-size:.78rem;padding:3px 10px;background:#ef4444;color:white;border:none;border-radius:5px;cursor:pointer';
+    btn.onclick = desvinculaConjunto;
+    container.after(btn);
+  }
+
   rowConjunto.style.display = 'block';
 }
 
@@ -2951,7 +2998,8 @@ function openEdit(claseId) {
     document.getElementById('fAfCatAF5').checked = false;
     document.getElementById('fAfCatAF6').checked = false;
   }
-  updateConjuntoRow(cls.tipo || '');
+  _currentEditConjuntoId = cls.conjunto_id || null;
+  updateConjuntoRow(cls.tipo || '', _currentEditConjuntoId);
   toggleNoLectivo();
   document.getElementById('modalOverlay').classList.add('open');
 }
@@ -2976,8 +3024,9 @@ function openAdd(semanaId, dia, franjaId, isDesdoble=false) {
   document.getElementById('rowAfCat').style.display = 'none';
   document.getElementById('fAfCatAF5').checked = false;
   document.getElementById('fAfCatAF6').checked = false;
-  // Reset conjunto row
-  updateConjuntoRow('');
+  // Reset conjunto row (nueva clase, sin vínculo previo)
+  _currentEditConjuntoId = null;
+  updateConjuntoRow('', null);
   toggleNoLectivo();
   document.getElementById('modalOverlay').classList.add('open');
 }
@@ -3038,24 +3087,52 @@ async function saveSlot() {
     return;
   }
 
-  // Propagar a grupos marcados como "conjunto"
-  const conjuntoKeys = [...document.querySelectorAll('.fConjuntoGrupo:checked')].map(el => el.value);
-  if (conjuntoKeys.length > 0) {
-    await _saveConjunto(conjuntoKeys, payload, editCtx);
+  // Grupos NUEVOS a vincular (checkboxes marcados que NO estaban ya vinculados)
+  const newlyCheckedKeys = [...document.querySelectorAll('.fConjuntoGrupo:checked')]
+    .filter(el => !el.dataset.linked)
+    .map(el => el.value);
+
+  // Determinar el conjunto_id a usar:
+  // - Si la clase ya tiene vínculo, reutilizarlo para incluir nuevos grupos.
+  // - Si no, generar UUID nuevo solo cuando hay grupos a vincular.
+  let conjuntoId = _currentEditConjuntoId;
+  if (!conjuntoId && newlyCheckedKeys.length > 0) {
+    conjuntoId = crypto.randomUUID();
+  }
+  // Si hay nuevos grupos y el primary aún no tiene conjunto_id, asignárselo ahora
+  if (conjuntoId && !_currentEditConjuntoId) {
+    payload.conjunto_id = conjuntoId;
+  }
+
+  if (newlyCheckedKeys.length > 0) {
+    await _saveConjunto(newlyCheckedKeys, payload, editCtx, conjuntoId);
   }
 
   closeModal();
   await loadData();
-  const conjuntoMsg = conjuntoKeys.length > 0 ? ` (+ ${conjuntoKeys.length} grupo${conjuntoKeys.length > 1 ? 's' : ''} conjunto)` : '';
-  showToast('Guardado en base de datos' + conjuntoMsg);
+
+  // Toast informativo
+  const linkedUpdated = res.linked_updated || 0;
+  let msg = 'Guardado en base de datos';
+  if (linkedUpdated > 0) {
+    msg += ` (propagado a ${linkedUpdated} grupo${linkedUpdated > 1 ? 's' : ''} vinculado${linkedUpdated > 1 ? 's' : ''})`;
+  } else if (newlyCheckedKeys.length > 0) {
+    msg += ` (+ ${newlyCheckedKeys.length} grupo${newlyCheckedKeys.length > 1 ? 's' : ''} vinculado${newlyCheckedKeys.length > 1 ? 's' : ''})`;
+  }
+  showToast(msg);
 }
 
 /**
- * Propaga un EXP a los grupos seleccionados como "conjunto".
+ * Propaga un EXP/EXF a los grupos seleccionados como "conjunto".
  * En modo add: crea la clase en la semana equivalente (por numero) de cada grupo.
  * En modo edit: actualiza la clase existente en ese slot, o la crea si no existe.
+ *
+ * @param {string[]} groupKeys  - Claves de grupos destino (solo los NUEVOS, no ya vinculados).
+ * @param {object}   payload    - Payload de la clase origen.
+ * @param {object}   ctx        - editCtx de la llamada.
+ * @param {string|null} conjuntoId - UUID del vínculo a asignar a todas las clases del conjunto.
  */
-async function _saveConjunto(groupKeys, payload, ctx) {
+async function _saveConjunto(groupKeys, payload, ctx, conjuntoId = null) {
   const semanaNumero = ctx.semana_numero;
   const dia         = ctx.mode === 'edit' ? ctx.dia       : payload.dia;
   const franjaId    = ctx.mode === 'edit' ? ctx.franja_id : payload.franja_id;
@@ -3076,39 +3153,65 @@ async function _saveConjunto(groupKeys, payload, ctx) {
         c.dia === dia && c.franja_id === franjaId && !c.es_no_lectivo
       );
       if (existing) {
-        // Actualizar la clase existente
-        await api('/api/clase/update', { ...payload, id: existing.id, asignatura_id: payload.asignatura_id });
+        await api('/api/clase/update', {
+          ...payload,
+          id: existing.id,
+          asignatura_id: payload.asignatura_id,
+          conjunto_id: conjuntoId
+        });
       } else {
-        // No existe → crear
         await api('/api/clase/create', {
           ...payload,
           semana_id: semana.semana_id,
           dia,
           franja_id: franjaId,
           scope: 'single',
-          force_insert: false
+          force_insert: false,
+          conjunto_id: conjuntoId
         });
       }
     } else {
       // Modo add: crear en la semana correspondiente del grupo destino
-      // Respetar el scope seleccionado (single/all/from) para este grupo también
       await api('/api/clase/create', {
         ...payload,
         semana_id: semana.semana_id,
         dia,
         franja_id: franjaId,
-        force_insert: false
+        force_insert: false,
+        conjunto_id: conjuntoId
       });
     }
   }
 }
 
-async function deleteSlot() {
-  if (!editCtx || editCtx.mode !== 'edit') return;
-  await api('/api/clase/delete', { id: editCtx.claseId });
+/**
+ * Elimina el vínculo conjunto_id de todos los exámenes del grupo conjunto actual.
+ * Se llama desde el botón "🔓 Desvincular todo" en rowConjunto.
+ */
+async function desvinculaConjunto() {
+  if (!editCtx || !_currentEditConjuntoId) return;
+  if (!confirm('¿Desvincular este examen de todos los grupos conjunto?\n\nLos exámenes quedarán independientes y los cambios ya no se propagarán.')) return;
+  const res = await api('/api/clase/conjunto/unlink', { id: editCtx.claseId, all: true });
+  if (res.error) { showToast('⚠️ ' + res.error, true); return; }
   closeModal();
   await loadData();
-  showToast('Eliminado de base de datos');
+  showToast('Examen desvinculado — los grupos son independientes ahora');
+}
+
+async function deleteSlot() {
+  if (!editCtx || editCtx.mode !== 'edit') return;
+  let deleteConjunto = false;
+  if (_currentEditConjuntoId) {
+    deleteConjunto = confirm(
+      '⚠️ Este examen está vinculado a otros grupos.\n\n' +
+      '· Aceptar → eliminar en TODOS los grupos vinculados\n' +
+      '· Cancelar → eliminar solo en este grupo'
+    );
+  }
+  await api('/api/clase/delete', { id: editCtx.claseId, delete_conjunto: deleteConjunto });
+  closeModal();
+  await loadData();
+  showToast(deleteConjunto ? 'Eliminado de todos los grupos vinculados' : 'Eliminado de base de datos');
 }
 
 function getPrintInfo() {

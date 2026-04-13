@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.27.1"
+APP_VERSION = "1.28.0"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -289,7 +289,7 @@ def api_get_all(params):
     all_clases = conn.execute("""
         SELECT c.id, c.semana_id, c.dia, c.franja_id, c.asignatura_id,
                c.aula, c.tipo, c.subgrupo, c.observacion,
-               c.es_no_lectivo, c.contenido, c.af_cat,
+               c.es_no_lectivo, c.contenido, c.af_cat, c.conjunto_id,
                f.label AS franja_label, f.orden AS franja_orden,
                a.codigo AS asig_codigo, a.nombre AS asig_nombre
         FROM clases c
@@ -335,7 +335,11 @@ def api_get_all(params):
 
 
 def api_update_clase(data):
-    """Update an existing class"""
+    """Update an existing class.
+    Si se pasa 'conjunto_id' en data, se asigna ese valor a la clase ('' → NULL).
+    Tras guardar, propaga los campos de contenido a todas las clases vinculadas
+    (mismo conjunto_id), pero NO modifica su posición (dia/franja/semana).
+    """
     conn = get_db()
     clase_id = data.get("id")
     if not clase_id:
@@ -343,13 +347,10 @@ def api_update_clase(data):
         return {"error": "ID de clase requerido"}
 
     asignatura_id = resolve_asignatura(conn, data)
-
     af_cat = data.get("af_cat") or None
-    conn.execute("""
-        UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
-               es_no_lectivo=?, contenido=?, af_cat=?
-        WHERE id=?
-    """, (
+
+    # Campos de contenido que siempre se actualizan
+    content_vals = (
         asignatura_id,
         data.get("aula", ""),
         data.get("tipo", ""),
@@ -358,11 +359,42 @@ def api_update_clase(data):
         1 if data.get("es_no_lectivo") else 0,
         data.get("contenido", ""),
         af_cat,
-        clase_id
-    ))
+    )
+
+    # conjunto_id: solo se modifica si viene explícitamente en el payload
+    if "conjunto_id" in data:
+        conjunto_id_val = data["conjunto_id"] or None   # '' o None → NULL
+        conn.execute("""
+            UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
+                   es_no_lectivo=?, contenido=?, af_cat=?, conjunto_id=?
+            WHERE id=?
+        """, content_vals + (conjunto_id_val, clase_id))
+    else:
+        conn.execute("""
+            UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
+                   es_no_lectivo=?, contenido=?, af_cat=?
+            WHERE id=?
+        """, content_vals + (clase_id,))
+
+    # Propagar a clases vinculadas (mismo conjunto_id, distinta clase)
+    row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
+    linked_updated = 0
+    if row and row["conjunto_id"]:
+        linked = conn.execute(
+            "SELECT id FROM clases WHERE conjunto_id=? AND id!=?",
+            (row["conjunto_id"], clase_id)
+        ).fetchall()
+        for lc in linked:
+            conn.execute("""
+                UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
+                       es_no_lectivo=?, contenido=?, af_cat=?
+                WHERE id=?
+            """, content_vals + (lc["id"],))
+            linked_updated += 1
+
     conn.commit()
     conn.close()
-    return {"ok": True, "id": clase_id}
+    return {"ok": True, "id": clase_id, "linked_updated": linked_updated}
 
 
 def api_create_clase(data):
@@ -395,6 +427,7 @@ def api_create_clase(data):
         semana_ids = [r["id"] for r in rows]
 
     force_insert = data.get("force_insert", False)
+    conjunto_id = data.get("conjunto_id") or None
     created = []
     for sid in semana_ids:
         existing = None if force_insert else conn.execute(
@@ -404,18 +437,18 @@ def api_create_clase(data):
         if existing:
             conn.execute("""
                 UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
-                       es_no_lectivo=?, contenido=?, af_cat=? WHERE id=?
+                       es_no_lectivo=?, contenido=?, af_cat=?, conjunto_id=? WHERE id=?
             """, (asignatura_id, data.get("aula",""), data.get("tipo",""), data.get("subgrupo",""),
                   data.get("observacion",""), 1 if data.get("es_no_lectivo") else 0,
-                  data.get("contenido",""), af_cat, existing["id"]))
+                  data.get("contenido",""), af_cat, conjunto_id, existing["id"]))
             created.append(existing["id"])
         else:
             conn.execute("""
-                INSERT INTO clases (semana_id,dia,franja_id,asignatura_id,aula,tipo,subgrupo,observacion,es_no_lectivo,contenido,af_cat)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO clases (semana_id,dia,franja_id,asignatura_id,aula,tipo,subgrupo,observacion,es_no_lectivo,contenido,af_cat,conjunto_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """, (sid, dia, franja_id, asignatura_id, data.get("aula",""), data.get("tipo",""),
                   data.get("subgrupo",""), data.get("observacion",""),
-                  1 if data.get("es_no_lectivo") else 0, data.get("contenido",""), af_cat))
+                  1 if data.get("es_no_lectivo") else 0, data.get("contenido",""), af_cat, conjunto_id))
             created.append(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     conn.commit()
@@ -425,15 +458,54 @@ def api_create_clase(data):
 
 
 def api_delete_clase(data):
-    """Delete a class"""
+    """Delete a class.
+    Si delete_conjunto=True y la clase tiene conjunto_id, elimina también todas
+    las clases vinculadas (mismo conjunto_id).
+    """
     clase_id = data.get("id")
     if not clase_id:
         return {"error": "ID de clase requerido"}
     conn = get_db()
+    deleted = 1
+    if data.get("delete_conjunto"):
+        row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
+        if row and row["conjunto_id"]:
+            res = conn.execute(
+                "DELETE FROM clases WHERE conjunto_id=?", (row["conjunto_id"],)
+            )
+            deleted = res.rowcount
+            conn.commit()
+            conn.close()
+            return {"ok": True, "deleted": deleted}
     conn.execute("DELETE FROM clases WHERE id=?", (clase_id,))
     conn.commit()
     conn.close()
-    return {"ok": True}
+    return {"ok": True, "deleted": deleted}
+
+
+def api_unlink_conjunto(data):
+    """Elimina el vínculo conjunto_id de una clase.
+    Si all=True (defecto), desvincula todas las clases del mismo conjunto.
+    Si all=False, solo desvincula la clase indicada por 'id'.
+    """
+    clase_id = data.get("id")
+    if not clase_id:
+        return {"error": "ID de clase requerido"}
+    conn = get_db()
+    row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
+    if not row or not row["conjunto_id"]:
+        conn.close()
+        return {"ok": True, "unlinked": 0}
+    cid = row["conjunto_id"]
+    if data.get("all", True):
+        res = conn.execute("UPDATE clases SET conjunto_id=NULL WHERE conjunto_id=?", (cid,))
+        unlinked = res.rowcount
+    else:
+        conn.execute("UPDATE clases SET conjunto_id=NULL WHERE id=?", (clase_id,))
+        unlinked = 1
+    conn.commit()
+    conn.close()
+    return {"ok": True, "unlinked": unlinked}
 
 
 def api_manage_asignatura(data):
@@ -1160,6 +1232,21 @@ def api_move_clase(data):
             # MOVE simple a celda vacía
             conn.execute("UPDATE clases SET dia=?, franja_id=? WHERE id=?",
                          (nueva_dia, nuevo_franja, clase_id))
+
+        # Propagar posición a clases vinculadas (mismo conjunto_id, cada una en su semana)
+        row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
+        linked_moved = 0
+        if row and row["conjunto_id"]:
+            linked = conn.execute(
+                "SELECT id FROM clases WHERE conjunto_id=? AND id!=?",
+                (row["conjunto_id"], clase_id)
+            ).fetchall()
+            for lc in linked:
+                # Mover directamente (sin swap) a la nueva posición en su propia semana
+                conn.execute("UPDATE clases SET dia=?, franja_id=? WHERE id=?",
+                             (nueva_dia, nuevo_franja, lc["id"]))
+                linked_moved += 1
+
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -1174,10 +1261,11 @@ def api_move_clase(data):
 
 API_ROUTES = {
     "/api/schedule":       ("GET",  api_get_all),
-    "/api/clase/update":   ("POST", api_update_clase),
-    "/api/clase/create":   ("POST", api_create_clase),
-    "/api/clase/delete":   ("POST", api_delete_clase),
-    "/api/clase/move":     ("POST", api_move_clase),
+    "/api/clase/update":          ("POST", api_update_clase),
+    "/api/clase/create":          ("POST", api_create_clase),
+    "/api/clase/delete":          ("POST", api_delete_clase),
+    "/api/clase/move":            ("POST", api_move_clase),
+    "/api/clase/conjunto/unlink": ("POST", api_unlink_conjunto),
     "/api/asignatura":     ("POST", api_manage_asignatura),
     "/api/ficha-override": ("POST", api_ficha_override),
     "/api/festivos":       ("GET",  api_get_festivos),

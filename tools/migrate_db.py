@@ -269,6 +269,14 @@ def _m14_rename_grupo_unico(conn, **ctx):
     )
 
 
+def _m15_conjunto_id_clases(conn, **ctx):
+    """Añade columna 'conjunto_id' a clases (UUID compartido entre exámenes EXP/EXF
+    vinculados entre grupos). NULL = sin vínculo."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(clases)").fetchall()}
+    if "conjunto_id" not in cols:
+        conn.execute("ALTER TABLE clases ADD COLUMN conjunto_id TEXT DEFAULT NULL")
+
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -287,6 +295,7 @@ MIGRATIONS = [
     (12, "Re-garantiza columna 'af_cat' en clases (fix stamp sin columna)",     _m12_fix_af_cat_stamp),
     (13, "Crea comentarios_horario si no existe (fix stamp sin tabla)",         _m13_fix_comentarios_stamp),
     (14, "Renombra grupo 'unico' → '1' en grupos y tablas relacionadas",        _m14_rename_grupo_unico),
+    (15, "Añade columna 'conjunto_id' a clases (vínculo persistente EXP/EXF)",  _m15_conjunto_id_clases),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]
