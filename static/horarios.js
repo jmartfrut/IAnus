@@ -3060,6 +3060,65 @@ async function saveSlot() {
     contenido: noLec ? 'NO LECTIVO' : (asig ? '['+asig.codigo+'] '+asig.nombre : '')
   };
 
+  // Grupos NUEVOS a vincular (checkboxes marcados que NO estaban ya vinculados)
+  // Se calcula aquí, antes de cualquier API call, para poder abortar si hay conflicto.
+  const newlyCheckedKeys = [...document.querySelectorAll('.fConjuntoGrupo:checked')]
+    .filter(el => !el.dataset.linked)
+    .map(el => el.value);
+
+  // ── Validación previa: comprobar conflictos de franja en grupos a vincular ──
+  if (newlyCheckedKeys.length > 0) {
+    // Día y franja a verificar (en edit ya los tenemos; en add aún están en el formulario)
+    const chkDia      = editCtx.mode === 'edit'
+      ? editCtx.dia
+      : document.getElementById('fDia').value;
+    const chkFranjaId = editCtx.mode === 'edit'
+      ? editCtx.franja_id
+      : parseInt(document.getElementById('fHora').value);
+    const chkSemNum   = editCtx.semana_numero;
+    const prefix      = currentCurso + '_' + currentCuat + '_grupo_';
+
+    const conflicts = [];
+    for (const groupKey of newlyCheckedKeys) {
+      const grupo  = DB.grupos[groupKey];
+      if (!grupo) continue;
+      const semana = chkSemNum != null
+        ? grupo.semanas.find(s => s.numero === chkSemNum)
+        : null;
+      if (!semana) continue;
+      const conflict = semana.clases.find(c =>
+        c.dia === chkDia && c.franja_id === chkFranjaId && !c.es_no_lectivo
+      );
+      if (conflict) {
+        const gNum     = groupKey.slice(prefix.length);
+        const asigName = conflict.asig_nombre || conflict.contenido || 'clase existente';
+        conflicts.push(`• Grupo ${gNum}: "${asigName}"`);
+      }
+    }
+
+    if (conflicts.length > 0) {
+      showToast(
+        '⚠️ Franja ya ocupada en:\n' + conflicts.join('\n') +
+        '\n\nDesmarque ese grupo o mueva primero la clase existente.',
+        true
+      );
+      return; // modal permanece abierto
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Determinar conjunto_id ANTES de llamar al servidor para incluirlo en el payload.
+  // - Si la clase ya tiene vínculo, reutilizarlo (para añadir nuevos grupos).
+  // - Si no, generar UUID nuevo solo cuando hay grupos a vincular.
+  let conjuntoId = _currentEditConjuntoId;
+  if (!conjuntoId && newlyCheckedKeys.length > 0) {
+    conjuntoId = crypto.randomUUID();
+  }
+  // Incluirlo en el payload del primary cuando es nuevo (sin vínculo previo)
+  if (conjuntoId && !_currentEditConjuntoId) {
+    payload.conjunto_id = conjuntoId;
+  }
+
   let res;
   if (editCtx.mode === 'edit') {
     payload.id = editCtx.claseId;
@@ -3085,23 +3144,6 @@ async function saveSlot() {
   if (res && res.error) {
     showToast('⚠️ ' + res.error, true);
     return;
-  }
-
-  // Grupos NUEVOS a vincular (checkboxes marcados que NO estaban ya vinculados)
-  const newlyCheckedKeys = [...document.querySelectorAll('.fConjuntoGrupo:checked')]
-    .filter(el => !el.dataset.linked)
-    .map(el => el.value);
-
-  // Determinar el conjunto_id a usar:
-  // - Si la clase ya tiene vínculo, reutilizarlo para incluir nuevos grupos.
-  // - Si no, generar UUID nuevo solo cuando hay grupos a vincular.
-  let conjuntoId = _currentEditConjuntoId;
-  if (!conjuntoId && newlyCheckedKeys.length > 0) {
-    conjuntoId = crypto.randomUUID();
-  }
-  // Si hay nuevos grupos y el primary aún no tiene conjunto_id, asignárselo ahora
-  if (conjuntoId && !_currentEditConjuntoId) {
-    payload.conjunto_id = conjuntoId;
   }
 
   if (newlyCheckedKeys.length > 0) {
@@ -3171,12 +3213,16 @@ async function _saveConjunto(groupKeys, payload, ctx, conjuntoId = null) {
         });
       }
     } else {
-      // Modo add: crear en la semana correspondiente del grupo destino
+      // Modo add: crear SOLO en la semana equivalente del grupo destino.
+      // CRÍTICO: scope siempre 'single' — aunque el usuario haya elegido 'all' o 'from'
+      // para el grupo origen, propagar a otras semanas asignaría conjunto_id a clases
+      // de distinto tipo (teoría, lab, etc.) que ocupen esa franja en otras semanas.
       await api('/api/clase/create', {
         ...payload,
         semana_id: semana.semana_id,
         dia,
         franja_id: franjaId,
+        scope: 'single',
         force_insert: false,
         conjunto_id: conjuntoId
       });
@@ -3200,15 +3246,60 @@ async function desvinculaConjunto() {
 
 async function deleteSlot() {
   if (!editCtx || editCtx.mode !== 'edit') return;
-  let deleteConjunto = false;
+
+  let deleteConjunto   = false;
+  let orphanLinkedIds  = [];   // IDs de clases vinculadas cuyo primary perdió conjunto_id
+
   if (_currentEditConjuntoId) {
+    // Caso normal: la clase tiene conjunto_id → ofrecemos borrar todas
     deleteConjunto = confirm(
       '⚠️ Este examen está vinculado a otros grupos.\n\n' +
       '· Aceptar → eliminar en TODOS los grupos vinculados\n' +
       '· Cancelar → eliminar solo en este grupo'
     );
+  } else {
+    // Fallback: detectar clases en otros grupos del mismo curso/cuatrimestre
+    // en la misma posición con conjunto_id seteado.
+    // Cubre el caso donde la clase primaria perdió conjunto_id (bug de versión anterior).
+    const week = getCurrentWeek();
+    const cls  = week ? week.clases.find(c => c.id === editCtx.claseId) : null;
+    if (cls && ['EXP', 'EXF'].includes(cls.tipo)) {
+      const prefix = currentCurso + '_' + currentCuat + '_grupo_';
+      for (const [gKey, gData] of Object.entries(DB.grupos)) {
+        // Solo buscar en grupos del mismo curso/cuatrimestre (donde tiene sentido el conjunto)
+        if (!gKey.startsWith(prefix)) continue;
+        if (gKey === prefix + currentGroup) continue;
+        for (const sem of gData.semanas) {
+          if (sem.numero !== editCtx.semana_numero) continue;
+          const linked = sem.clases.find(c =>
+            c.dia        === editCtx.dia       &&
+            c.franja_id  === editCtx.franja_id &&
+            c.asig_codigo === cls.asig_codigo  &&   // comparar por código, más robusto que por id
+            c.conjunto_id                            // tiene vínculo aunque el primary no lo tenga
+          );
+          if (linked) orphanLinkedIds.push(linked.id);
+        }
+      }
+      if (orphanLinkedIds.length > 0) {
+        deleteConjunto = confirm(
+          '⚠️ Este examen está vinculado a otros grupos.\n\n' +
+          '· Aceptar → eliminar en TODOS los grupos vinculados\n' +
+          '· Cancelar → eliminar solo en este grupo'
+        );
+      }
+    }
   }
+
+  // Eliminar la clase actual (con o sin borrado conjunto vía conjunto_id)
   await api('/api/clase/delete', { id: editCtx.claseId, delete_conjunto: deleteConjunto });
+
+  // Borrar las clases huérfanas detectadas por el fallback (si el usuario confirmó)
+  if (deleteConjunto && orphanLinkedIds.length > 0) {
+    for (const id of orphanLinkedIds) {
+      await api('/api/clase/delete', { id, delete_conjunto: true });
+    }
+  }
+
   closeModal();
   await loadData();
   showToast(deleteConjunto ? 'Eliminado de todos los grupos vinculados' : 'Eliminado de base de datos');

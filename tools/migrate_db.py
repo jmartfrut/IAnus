@@ -277,6 +277,17 @@ def _m15_conjunto_id_clases(conn, **ctx):
         conn.execute("ALTER TABLE clases ADD COLUMN conjunto_id TEXT DEFAULT NULL")
 
 
+def _m16_clear_conjunto_id_non_exam(conn, **ctx):
+    """Limpia conjunto_id en clases que NO sean de tipo EXP o EXF.
+    Corrección de un bug en versiones anteriores donde _saveConjunto podía
+    propagar el conjunto_id a clases de teoría/laboratorio al usar scope='all'."""
+    conn.execute("""
+        UPDATE clases SET conjunto_id = NULL
+        WHERE tipo NOT IN ('EXP', 'EXF')
+          AND conjunto_id IS NOT NULL
+    """)
+
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -296,6 +307,7 @@ MIGRATIONS = [
     (13, "Crea comentarios_horario si no existe (fix stamp sin tabla)",         _m13_fix_comentarios_stamp),
     (14, "Renombra grupo 'unico' → '1' en grupos y tablas relacionadas",        _m14_rename_grupo_unico),
     (15, "Añade columna 'conjunto_id' a clases (vínculo persistente EXP/EXF)",  _m15_conjunto_id_clases),
+    (16, "Limpia conjunto_id en clases no-EXP/EXF (fix propagación incorrecta)", _m16_clear_conjunto_id_non_exam),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

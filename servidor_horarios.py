@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.28.0"
+APP_VERSION = "1.28.1"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -361,9 +361,13 @@ def api_update_clase(data):
         af_cat,
     )
 
+    tipo_val = data.get("tipo", "")
+
     # conjunto_id: solo se modifica si viene explícitamente en el payload
+    # y la clase es de tipo EXP o EXF — nunca en otros tipos de actividad.
     if "conjunto_id" in data:
-        conjunto_id_val = data["conjunto_id"] or None   # '' o None → NULL
+        raw_cid = data["conjunto_id"] or None   # '' o None → NULL
+        conjunto_id_val = raw_cid if tipo_val in ("EXP", "EXF") else None
         conn.execute("""
             UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, observacion=?,
                    es_no_lectivo=?, contenido=?, af_cat=?, conjunto_id=?
@@ -376,12 +380,13 @@ def api_update_clase(data):
             WHERE id=?
         """, content_vals + (clase_id,))
 
-    # Propagar a clases vinculadas (mismo conjunto_id, distinta clase)
-    row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
+    # Propagar a clases vinculadas (mismo conjunto_id, distinta clase).
+    # Solo tiene sentido en EXP/EXF; si el tipo cambió a otro, limpiar vínculo.
+    row = conn.execute("SELECT conjunto_id, tipo FROM clases WHERE id=?", (clase_id,)).fetchone()
     linked_updated = 0
-    if row and row["conjunto_id"]:
+    if row and row["conjunto_id"] and row["tipo"] in ("EXP", "EXF"):
         linked = conn.execute(
-            "SELECT id FROM clases WHERE conjunto_id=? AND id!=?",
+            "SELECT id FROM clases WHERE conjunto_id=? AND id!=? AND tipo IN ('EXP','EXF')",
             (row["conjunto_id"], clase_id)
         ).fetchall()
         for lc in linked:
@@ -427,7 +432,9 @@ def api_create_clase(data):
         semana_ids = [r["id"] for r in rows]
 
     force_insert = data.get("force_insert", False)
-    conjunto_id = data.get("conjunto_id") or None
+    tipo_val = data.get("tipo", "")
+    # conjunto_id solo se persiste en actividades de tipo EXP o EXF
+    conjunto_id = (data.get("conjunto_id") or None) if tipo_val in ("EXP", "EXF") else None
     created = []
     for sid in semana_ids:
         existing = None if force_insert else conn.execute(
