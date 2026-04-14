@@ -1345,7 +1345,9 @@ function renderParciales() {
           const turno = getTurno(e.franjaOrden);
           const hasConflict = conflictSet.has(`${sNum}|${curso}|${dia}|${turno}`);
           if (hasConflict) cellHasConflict = true;
-          const grupoStr = e.grupos.length < 2 ? `<span class="parc-grupo">Gr ${e.grupos[0]}</span>` : '';
+          const grupoStr = e.grupos.length >= 2
+            ? `<span class="parc-grupo parc-grupo-conjunto">${e.grupos.map(g => 'G'+g).sort().join('-')}</span>`
+            : `<span class="parc-grupo">Gr ${e.grupos[0]}</span>`;
           const conflictBadge = hasConflict
             ? `<span class="parc-conflict-badge">&#9888; conflicto ${turno}</span>` : '';
           cellHtml += `<div class="parc-entry ${entryBg[curso]}${hasConflict?' conflict-entry':''}">
@@ -3067,7 +3069,8 @@ async function saveSlot() {
     .map(el => el.value);
 
   // ── Validación previa: comprobar conflictos de franja en grupos a vincular ──
-  if (newlyCheckedKeys.length > 0) {
+  // Solo se aplica a actividades EXP vinculadas; las prácticas no pasan por esta comprobación.
+  if (newlyCheckedKeys.length > 0 && tipoVal === 'EXP') {
     // Día y franja a verificar (en edit ya los tenemos; en add aún están en el formulario)
     const chkDia      = editCtx.mode === 'edit'
       ? editCtx.dia

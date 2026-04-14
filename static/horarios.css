@@ -240,6 +240,7 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .parc-obs{font-size:.65rem;font-weight:800;color:#dc2626;text-transform:uppercase;letter-spacing:.04em}
 .parc-time{font-size:.63rem;color:var(--text-light)}
 .parc-grupo{font-size:.62rem;color:#6b7280;font-style:italic}
+.parc-grupo-conjunto{color:#1d4ed8;font-style:normal;font-weight:600;letter-spacing:.03em}
 .parc-row-sep td{height:4px;background:#f3f4f6;border:none}
 .parc-conflict{outline:2px solid #f59e0b;outline-offset:-2px}
 .parc-summary{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
