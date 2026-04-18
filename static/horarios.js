@@ -4481,6 +4481,347 @@ async function saveFestivo(fecha, action) {
   showToast(action === 'delete' ? 'Día eliminado del calendario ✔' : 'Día guardado en todos los horarios ✔');
 }
 
+// ─── EXPORTAR CALENDARIO PDF ─────────────────────────────────────────────────
+// Genera un PDF de 2 páginas:
+//   Pág 1 (landscape A4): cuadrícula de los 11 meses del curso con celdas coloreadas
+//   Pág 2 (portrait A4):  tabla de festivos y no-lectivos con fecha, tipo y descripción
+async function exportCalendarioPDF() {
+  showPdfOverlay();
+  setPdfProgress(10, 'Cargando librerías PDF…');
+  try {
+    const [, logo] = await Promise.all([loadPdfLibs(), _loadLogo()]);
+    const { jsPDF } = window.jspdf;
+
+    // ── Datos del curso ───────────────────────────────────────────────────────
+    const [yStart, yEnd] = (CURSO_STR || '2026-2027').split('-').map(Number);
+    // 11 meses académicos: Sep → Jul
+    const academicMonths = [];
+    for (let m = 8; m <= 11; m++) academicMonths.push([yStart, m]);
+    for (let m = 0; m <= 6;  m++) academicMonths.push([yEnd,   m]);
+
+    // Períodos de exámenes
+    const examenDatesSet = new Set();
+    try {
+      const periods = getFinalesPeriods();
+      for (const [, period] of Object.entries(periods)) {
+        const [sy, sm, sd] = period.start.split('-').map(Number);
+        const [ey, em, ed] = period.end.split('-').map(Number);
+        const cur = new Date(sy, sm - 1, sd);
+        const end = new Date(ey, em - 1, ed);
+        while (cur <= end) { examenDatesSet.add(isoLocal(cur)); cur.setDate(cur.getDate() + 1); }
+      }
+    } catch(e) { /* getFinalesPeriods puede no estar disponible aún */ }
+
+    // Festivos de config.json (misma lógica que renderCalendar)
+    const configFestivosMap = {};
+    function _addCF(list) {
+      for (const f of (list || [])) {
+        const fecha = (typeof f === 'string') ? f : f.fecha;
+        if (!fecha || configFestivosMap[fecha]) continue;
+        configFestivosMap[fecha] = {
+          tipo:        ((typeof f === 'object') ? f.tipo        : null) || 'no_lectivo',
+          descripcion: ((typeof f === 'object') ? f.descripcion : null) || ''
+        };
+      }
+    }
+    try {
+      const cal = DB?.config?.calendario;
+      if (cal) {
+        _addCF(cal['1C']?.festivos);
+        _addCF(cal['2C']?.festivos);
+        const pe = cal.periodos_examenes;
+        if (pe) for (const p of Object.values(pe)) _addCF(p.festivos);
+      }
+    } catch(e) {}
+
+    // Unir fuentes (BD tiene prioridad)
+    const allFestivos = { ...configFestivosMap, ...(FESTIVOS_MAP || {}) };
+
+    // ── Paleta de colores (R,G,B) ─────────────────────────────────────────────
+    const CELL_COLORS = {
+      lectivo:        [219, 234, 254],
+      festivo:        [254, 202, 202],
+      no_lectivo:     [254, 215, 170],
+      finde:          [226, 232, 240],
+      fuera:          [241, 245, 249],
+      periodo_examen: [187, 247, 208],
+      domingo:        [241, 245, 249],
+    };
+    const TEXT_COLORS = {
+      lectivo:        [30, 64, 175],
+      festivo:        [153, 27, 27],
+      no_lectivo:     [154, 52, 18],
+      finde:          [107, 114, 128],
+      fuera:          [210, 215, 220],
+      periodo_examen: [22, 101, 52],
+      domingo:        [210, 215, 220],
+    };
+
+    // Misma lógica de clasificación que renderCalendar()
+    function getDayClass(iso, wd) {
+      if (wd === 0) return 'domingo';
+      const festivo = (FESTIVOS_MAP || {})[iso] || configFestivosMap[iso] || null;
+      if (festivo) return festivo.tipo || 'no_lectivo';
+      if (examenDatesSet.has(iso)) return 'periodo_examen';
+      if (wd === 6) return 'finde';
+      if (!CAL_SEMANA_MAP[iso]) return 'fuera';
+      return 'lectivo';
+    }
+
+    setPdfProgress(30, 'Generando página 1: calendario…');
+
+    // ── Página 1: Cuadrícula de meses (landscape A4, 297×210mm) ──────────────
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const PW = pdf.internal.pageSize.getWidth();   // 297
+    const PH = pdf.internal.pageSize.getHeight();  // 210
+    const M = 12; // margen
+
+    // Cabecera azul
+    const degreeLabel = `${DEGREE_ACRONYM} · ${INSTITUTION_ACRONYM}`;
+    const titleStr    = `Calendario Académico — ${degreeLabel}  ·  ${CURSO_STR || ''}`;
+    pdf.setFillColor(30, 64, 175);
+    pdf.rect(M, 7, PW - 2*M, 8.5, 'F');
+    pdf.setFontSize(10.5); pdf.setFont(undefined, 'bold');
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(titleStr, M + 3, 12.7);
+    if (logo) {
+      const lh = 5.5, lw = lh * (1528.08 / 181.707);
+      pdf.addImage(logo, 'PNG', PW - M - lw, 8.3, lw, lh);
+    }
+
+    // Subtítulo con fecha generación
+    const todayStr = new Date().toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' });
+    pdf.setFontSize(6.5); pdf.setFont(undefined, 'normal');
+    pdf.setTextColor(120, 120, 120);
+    pdf.text(`Generado el ${todayStr}`, PW - M, 20.5, { align: 'right' });
+
+    // ── Layout de meses: 4 columnas × 3 filas ────────────────────────────────
+    const COLS      = 4;
+    const GAP_X     = 3,  GAP_Y = 5;
+    const MONTH_W   = (PW - 2*M - GAP_X * (COLS - 1)) / COLS; // ≈65.25mm
+    const HEADER_H  = 5.5;   // cabecera del mes (fondo azul oscuro)
+    const LABEL_H   = 4;     // fila de etiquetas de días
+    const CELL_H    = 3.8;   // altura de celda de día
+    const CELL_W    = MONTH_W / 7;
+    const MONTH_H   = HEADER_H + LABEL_H + 6 * CELL_H;  // ≈33.3mm
+    const CAL_Y0    = 23;    // y donde empieza la primera fila de meses
+
+    const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const DAY_ABBR   = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+
+    for (let mi = 0; mi < academicMonths.length; mi++) {
+      const [year, monthIdx] = academicMonths[mi];
+      const col = mi % COLS;
+      const row = Math.floor(mi / COLS);
+      const mx  = M + col * (MONTH_W + GAP_X);
+      const my  = CAL_Y0 + row * (MONTH_H + GAP_Y);
+
+      // Cabecera del mes
+      pdf.setFillColor(30, 64, 175);
+      pdf.rect(mx, my, MONTH_W, HEADER_H, 'F');
+      pdf.setFontSize(6.5); pdf.setFont(undefined, 'bold');
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(`${MONTH_NAMES[monthIdx]} ${year}`, mx + MONTH_W / 2, my + HEADER_H - 1.3, { align: 'center' });
+
+      // Etiquetas de días (Lu-Do)
+      pdf.setFontSize(5); pdf.setFont(undefined, 'bold');
+      pdf.setTextColor(100, 120, 160);
+      for (let d = 0; d < 7; d++) {
+        pdf.text(DAY_ABBR[d], mx + d * CELL_W + CELL_W / 2, my + HEADER_H + LABEL_H - 0.9, { align: 'center' });
+      }
+
+      // Celdas de días
+      const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+      let startWd = new Date(year, monthIdx, 1).getDay();
+      startWd = (startWd === 0) ? 6 : startWd - 1; // 0=Lu … 6=Do
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d   = new Date(year, monthIdx, day);
+        const wd  = d.getDay();
+        const iso = isoLocal(d);
+        const pos = startWd + day - 1;
+        const cellCol = pos % 7;
+        const cellRow = Math.floor(pos / 7);
+        const cx  = mx + cellCol * CELL_W;
+        const cy  = my + HEADER_H + LABEL_H + cellRow * CELL_H;
+
+        const cls = getDayClass(iso, wd);
+        const [cr, cg, cb] = CELL_COLORS[cls] || [240, 240, 240];
+        const [tr, tg, tb] = TEXT_COLORS[cls] || [60, 60, 60];
+
+        // Fondo de celda
+        pdf.setFillColor(cr, cg, cb);
+        pdf.rect(cx, cy, CELL_W, CELL_H, 'F');
+        // Borde sutil
+        pdf.setDrawColor(200, 212, 230);
+        pdf.setLineWidth(0.08);
+        pdf.rect(cx, cy, CELL_W, CELL_H, 'D');
+
+        // Número de día
+        pdf.setFontSize(4.5); pdf.setFont(undefined, cls === 'festivo' || cls === 'no_lectivo' ? 'bold' : 'normal');
+        pdf.setTextColor(tr, tg, tb);
+        pdf.text(String(day), cx + CELL_W / 2, cy + CELL_H - 0.85, { align: 'center' });
+      }
+    }
+
+    // ── Leyenda ───────────────────────────────────────────────────────────────
+    const LEG_Y = CAL_Y0 + 3 * (MONTH_H + GAP_Y) - GAP_Y + 5;
+    const legItems = [
+      { cls: 'lectivo',        label: 'Día lectivo' },
+      { cls: 'festivo',        label: 'Festivo nacional' },
+      { cls: 'no_lectivo',     label: 'No lectivo / Puente' },
+      { cls: 'periodo_examen', label: 'Período de exámenes' },
+      { cls: 'finde',          label: 'Fin de semana' },
+      { cls: 'fuera',          label: 'Fuera de cuatrimestre' },
+    ];
+    const SQ = 3;
+    let legX = M;
+    for (const { cls, label } of legItems) {
+      const [cr, cg, cb] = CELL_COLORS[cls];
+      pdf.setFillColor(cr, cg, cb);
+      pdf.rect(legX, LEG_Y, SQ, SQ, 'F');
+      pdf.setDrawColor(170, 180, 200);
+      pdf.setLineWidth(0.1);
+      pdf.rect(legX, LEG_Y, SQ, SQ, 'D');
+      pdf.setFontSize(5.5); pdf.setFont(undefined, 'normal'); pdf.setTextColor(60, 60, 60);
+      pdf.text(label, legX + SQ + 1.5, LEG_Y + SQ - 0.6);
+      legX += SQ + 1.5 + pdf.getTextWidth(label) + 5;
+    }
+
+    // ── Página 2: Tabla de festivos (portrait A4, 210×297mm) ─────────────────
+    setPdfProgress(65, 'Generando página 2: tabla de festivos…');
+    pdf.addPage('a4', 'portrait');
+    const pPW = pdf.internal.pageSize.getWidth();   // 210
+    const pPH = pdf.internal.pageSize.getHeight();  // 297
+
+    // Cabecera
+    pdf.setFillColor(30, 64, 175);
+    pdf.rect(M, 7, pPW - 2*M, 8.5, 'F');
+    pdf.setFontSize(10); pdf.setFont(undefined, 'bold');
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(`Días no lectivos y festivos — ${degreeLabel}  ·  ${CURSO_STR || ''}`, M + 3, 12.7);
+
+    // Filtrar y ordenar festivos (excluir domingos)
+    const entries = Object.entries(allFestivos)
+      .filter(([fecha]) => {
+        const [fy, fm, fd] = fecha.split('-').map(Number);
+        return new Date(fy, fm - 1, fd).getDay() !== 0;
+      })
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    if (!entries.length) {
+      pdf.setFontSize(9); pdf.setTextColor(140, 140, 140); pdf.setFont(undefined, 'normal');
+      pdf.text('No hay días festivos o no lectivos registrados en este curso.', pPW / 2, 40, { align: 'center' });
+    } else {
+      const MN_SHORT = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      const DN       = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+      const TABLE_Y = 21;
+      const ROW_H   = 6.5;
+      // Columnas: indicador | Fecha | Tipo | Descripción
+      const C_IND = M,          IND_W = 2;
+      const C_DATE = M + 2.5,   DATE_W = 36;
+      const C_TYPE = C_DATE + DATE_W + 1, TYPE_W = 27;
+      const C_DESC = C_TYPE + TYPE_W + 1, DESC_W = pPW - M - C_DESC - 1;
+
+      // Cabecera de tabla
+      function drawTableHeader(y) {
+        pdf.setFillColor(59, 130, 246);
+        pdf.rect(M, y, pPW - 2*M, ROW_H, 'F');
+        pdf.setFontSize(7); pdf.setFont(undefined, 'bold'); pdf.setTextColor(255, 255, 255);
+        pdf.text('Fecha',       C_DATE, y + ROW_H - 2);
+        pdf.text('Tipo',        C_TYPE, y + ROW_H - 2);
+        pdf.text('Descripción', C_DESC, y + ROW_H - 2);
+      }
+      drawTableHeader(TABLE_Y);
+
+      let rowY = TABLE_Y + ROW_H;
+
+      for (let i = 0; i < entries.length; i++) {
+        const [fecha, info] = entries[i];
+        const [fy, fm, fd] = fecha.split('-').map(Number);
+        const dObj = new Date(fy, fm - 1, fd);
+        const dateLabel = `${DN[dObj.getDay()]} ${fd} ${MN_SHORT[fm - 1]} ${fy}`;
+        const tipoText  = info.tipo === 'festivo' ? 'Festivo nacional' : 'No lectivo';
+        const desc      = info.descripcion || '—';
+
+        // Comprobación de nueva página
+        if (rowY + ROW_H > pPH - M) {
+          pdf.addPage('a4', 'portrait');
+          rowY = M;
+          drawTableHeader(rowY);
+          rowY += ROW_H;
+        }
+
+        // Fondo alternado
+        if (i % 2 === 0) {
+          pdf.setFillColor(248, 250, 252);
+          pdf.rect(M, rowY, pPW - 2*M, ROW_H, 'F');
+        }
+
+        // Pastilla de color izquierda
+        const [cr, cg, cb] = CELL_COLORS[info.tipo] || [200, 200, 200];
+        pdf.setFillColor(cr, cg, cb);
+        pdf.rect(C_IND, rowY, IND_W, ROW_H, 'F');
+
+        // Separador horizontal
+        pdf.setDrawColor(225, 230, 240);
+        pdf.setLineWidth(0.1);
+        pdf.line(M, rowY, M + (pPW - 2*M), rowY);
+
+        // Fecha
+        pdf.setFontSize(7); pdf.setFont(undefined, 'normal'); pdf.setTextColor(40, 40, 40);
+        pdf.text(dateLabel, C_DATE, rowY + ROW_H - 2);
+
+        // Tipo (color según festivo/no_lectivo)
+        const [tipoCr, tipoCg, tipoCb] = info.tipo === 'festivo' ? [153, 27, 27] : [154, 52, 18];
+        pdf.setFont(undefined, 'bold'); pdf.setTextColor(tipoCr, tipoCg, tipoCb);
+        pdf.text(tipoText, C_TYPE, rowY + ROW_H - 2);
+
+        // Descripción (con truncado si es muy larga)
+        pdf.setFont(undefined, 'normal'); pdf.setTextColor(55, 65, 81);
+        let descText = desc;
+        if (pdf.getTextWidth(descText) > DESC_W) {
+          while (descText.length > 0 && pdf.getTextWidth(descText + '…') > DESC_W) {
+            descText = descText.slice(0, -1);
+          }
+          descText += '…';
+        }
+        pdf.text(descText, C_DESC, rowY + ROW_H - 2);
+
+        rowY += ROW_H;
+      }
+
+      // Línea de cierre de tabla
+      pdf.setDrawColor(190, 200, 220);
+      pdf.setLineWidth(0.2);
+      pdf.line(M, rowY, M + (pPW - 2*M), rowY);
+
+      // Resumen final
+      const nFest  = entries.filter(([, i]) => i.tipo === 'festivo').length;
+      const nNL    = entries.filter(([, i]) => i.tipo !== 'festivo').length;
+      const totStr = `Total: ${entries.length} días — ${nFest} festivos nacionales · ${nNL} no lectivos / puentes`;
+      pdf.setFontSize(6.5); pdf.setFont(undefined, 'italic'); pdf.setTextColor(120, 120, 120);
+      pdf.text(totStr, M, rowY + 4.5);
+    }
+
+    // ── Descargar ─────────────────────────────────────────────────────────────
+    setPdfProgress(90, 'Descargando…');
+    const prefix = typeof EXPORT_PREFIX !== 'undefined' ? EXPORT_PREFIX : 'Calendario';
+    const curso  = (CURSO_STR || '').replace(/\//g, '-');
+    pdf.save(`${prefix}_Calendario_Academico_${curso}.pdf`);
+    setPdfProgress(100, '¡Listo!');
+
+  } catch(e) {
+    console.error(e);
+    alert('Error al generar el PDF del calendario: ' + e.message +
+          '\n\nComprueba la conexión a internet (necesaria la primera vez).');
+  } finally {
+    hidePdfOverlay();
+  }
+}
+
 // ─── INIT ───
 (async function() {
   // Cargar aulas antes del loadData para que el select esté poblado desde el primer render

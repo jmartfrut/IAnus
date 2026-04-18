@@ -221,20 +221,22 @@
       <button class="tab-btn" onclick="setView('parciales',this)">&#128221; Parciales</button>
       <button class="tab-btn" onclick="setView('finales',this)">&#127891; Finales</button>
       <button class="tab-btn" onclick="setView('festivos',this)">&#128197; Calendario</button>
+      <!-- VERIFICAR: botón oculto temporalmente; implementación completa conservada en JS/backend. Reactivar añadiendo aquí:
       <button class="tab-btn" onclick="setView('verificar',this)" disabled title="Vista temporalmente desactivada">&#128270; Verificar</button>
+      -->
     </div>
   </div>
-  <div class="toolbar-group" style="margin-left:auto">
+  <div class="toolbar-group" style="margin-left:auto;gap:8px">
     <input type="text" id="searchInput" placeholder="Buscar asignatura..." style="width:190px" oninput="render()">
-  </div>
-  <div class="export-dropdown" id="exportDropdown">
-    <button class="btn btn-success" onclick="toggleExportMenu(event)">&#128228; Exportar &#9660;</button>
-    <div class="export-menu" id="exportMenu">
-      <button onclick="exportPDF();closeExportMenu()">&#128438; PDF semana</button>
-      <button onclick="exportAllPDF();closeExportMenu()">&#128438; PDF todas las semanas</button>
-      <button onclick="exportAllGradoPDF();closeExportMenu()">&#128230; PDF todo el grado (ZIP)</button>
-      <button id="btnExportExcel" onclick="exportarExcel();closeExportMenu()">&#128196; Excel</button>
-      <button id="btnExportInstitucional" onclick="exportarInstitucional();closeExportMenu()">&#127970; Exportación UPCT</button>
+    <div class="export-dropdown" id="exportDropdown">
+      <button class="btn btn-success" onclick="toggleExportMenu(event)">&#128228; Exportar &#9660;</button>
+      <div class="export-menu" id="exportMenu">
+        <button onclick="exportPDF();closeExportMenu()">&#128438; PDF semana</button>
+        <button onclick="exportAllPDF();closeExportMenu()">&#128438; PDF todas las semanas</button>
+        <button onclick="exportAllGradoPDF();closeExportMenu()">&#128230; PDF todo el grado (ZIP)</button>
+        <button id="btnExportExcel" onclick="exportarExcel();closeExportMenu()">&#128196; Excel</button>
+        <button id="btnExportInstitucional" onclick="exportarInstitucional();closeExportMenu()">&#127970; Exportación UPCT</button>
+      </div>
     </div>
   </div>
 </div>
@@ -297,7 +299,10 @@
           <h3>&#128197; Calendario Acad&eacute;mico del Grado</h3>
           <p>Haz clic en un d&iacute;a lectivo para marcarlo/desmarcarlo. Los cambios se propagan autom&aacute;ticamente a <strong>todos los horarios</strong> y a los per&iacute;odos de ex&aacute;menes finales.</p>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="loadFestivos()">&#8635; Actualizar</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-outline btn-sm" onclick="loadFestivos()">&#8635; Actualizar</button>
+          <button class="btn btn-primary btn-sm" onclick="exportCalendarioPDF()">&#128247; Exportar PDF</button>
+        </div>
       </div>
       <div class="cal-legend">
         <span class="cal-leg-item"><span class="cal-dot cal-dot-festivo"></span> Festivo nacional</span>
