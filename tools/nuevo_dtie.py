@@ -1549,6 +1549,19 @@ def create_tables_dtie(conn):
             ts TEXT DEFAULT '',
             PRIMARY KEY (grupo_key)
         );
+        CREATE TABLE IF NOT EXISTS coordinacion_actividades (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo_key      TEXT    NOT NULL,
+            semana_num     INTEGER NOT NULL,
+            asignatura_id  INTEGER NOT NULL
+                               REFERENCES asignaturas(id) ON DELETE CASCADE,
+            tipo_actividad TEXT    NOT NULL,
+            notas          TEXT    DEFAULT '',
+            sincronizado   INTEGER DEFAULT 0,
+            ts             TEXT    DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
+        ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad);
     """)
     conn.commit()
 

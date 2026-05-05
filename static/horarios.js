@@ -10,6 +10,23 @@ let _mirrorGroupKey = null;      // key del grupo espejo, ej. '2_1C_grupo_2'
 let _mirrorExclusiones = new Set(); // códigos de asignaturas excluidas del espejo
 let _currentEditConjuntoId = null;  // conjunto_id de la clase en edición (null si nueva o sin vínculo)
 let _classroomsAll = [];   // aulas cargadas desde /api/classrooms
+
+// ── COORDINACIÓN HORIZONTAL ──────────────────────────────────────────────────
+let COORD_DATA    = null;   // respuesta de /api/coordinacion
+let _coordLoaded  = false;  // carga diferida (igual que finales)
+let coordTiposVisible = null; // Set<string> — tipos visibles; null = todos (se inicializa en primer render)
+const COORD_TIPOS = [
+  { codigo:'LAB', desc:'Prácticas de laboratorio',      color:'#2e7d32', sync:true  },
+  { codigo:'INF', desc:'Prácticas de informática',       color:'#1565c0', sync:true  },
+  { codigo:'SEM', desc:'Seminarios / visitas externas',  color:'#6a1b9a', sync:false },
+  { codigo:'EXP', desc:'Examen parcial',                 color:'#c62828', sync:true  },
+  { codigo:'EXF', desc:'Examen final',                   color:'#880e4f', sync:false },
+  { codigo:'TE',  desc:'Trabajo escrito / memoria',      color:'#e65100', sync:false },
+  { codigo:'EO',  desc:'Exposición oral',                color:'#4e342e', sync:false },
+  { codigo:'OA',  desc:'Otra actividad evaluable',       color:'#37474f', sync:false },
+];
+const COORD_WARN_THRESHOLD     = 2;   // naranja
+const COORD_OVERLOAD_THRESHOLD = 4;   // rojo
 const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
 // Mapa día → clase CSS. Escalable: añadir aquí si se soportan más días especiales.
 const DAYS_CLS_MAP = {
@@ -551,8 +568,9 @@ function populateFranjaSelect() {
 // ─── RENDER ───
 function render() {
   if (!DB) return;
-  if (currentView === 'semana') renderWeek();
+  if (currentView === 'semana')    renderWeek();
   else if (currentView === 'parciales') renderParciales();
+  else if (currentView === 'coord')     renderCoordinacion();
   else renderStats();
   renderWeekDots();
 }
@@ -3083,6 +3101,12 @@ function onFilterChange() {
   updateHeaderSubtitle();
   populateAsignaturaSelect();
   updateAulaDatalist();
+  // Si la vista activa es coordinación, recargar con el nuevo grupo
+  if (currentView === 'coord') {
+    _coordLoaded = false;
+    loadCoordinacion();
+    return;
+  }
   render();
 }
 
@@ -3188,9 +3212,15 @@ function setView(v, btn) {
   document.getElementById('view-finales').style.display   = v==='finales'  ?'':'none';
   document.getElementById('view-festivos').style.display  = v==='festivos' ?'':'none';
   document.getElementById('view-verificar').style.display = v==='verificar'?'':'none';
-  if (v==='festivos')  { loadFestivos(); return; }
-  if (v==='finales')   { loadFinales();  return; }
+  document.getElementById('view-coord').style.display     = v==='coord'    ?'':'none';
+  if (v==='festivos')  { loadFestivos();     return; }
+  if (v==='finales')   { loadFinales();      return; }
   if (v==='verificar') { return; }
+  if (v==='coord') {
+    if (!_coordLoaded) { _coordLoaded = true; loadCoordinacion(); }
+    else               { syncCoordinacion().then(() => renderCoordinacion()); }
+    return;
+  }
   render();
 }
 function showStats() { setView('stats', null); }
@@ -5613,3 +5643,583 @@ function _escHtml(str) {
 }
 
 // ── Fin Verificación ─────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALENDARIO DE COORDINACIÓN HORIZONTAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadCoordinacion() {
+  const params = new URLSearchParams({
+    curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
+  });
+  try {
+    const r = await fetch(`/api/coordinacion?${params}`);
+    COORD_DATA = await r.json();
+  } catch(e) {
+    COORD_DATA = { ok: false, error: e.message };
+  }
+  await syncCoordinacion();
+  renderCoordinacion();
+}
+
+async function syncCoordinacion() {
+  const grupoKey = `${currentCurso}_${currentCuat}_grupo_${currentGroup}`;
+  try {
+    await fetch('/api/coordinacion/sync', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ grupo_key: grupoKey })
+    });
+    const params = new URLSearchParams({
+      curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
+    });
+    const r = await fetch(`/api/coordinacion?${params}`);
+    COORD_DATA = await r.json();
+  } catch(e) {
+    console.warn('Coord sync error:', e);
+  }
+}
+
+function toggleCoordTipo(codigo) {
+  if (!coordTiposVisible) coordTiposVisible = new Set(COORD_TIPOS.map(t => t.codigo));
+  if (coordTiposVisible.has(codigo)) coordTiposVisible.delete(codigo);
+  else                                coordTiposVisible.add(codigo);
+  renderCoordinacion();
+}
+
+function renderCoordinacion() {
+  const container = document.getElementById('view-coord');
+  if (!container) return;
+  if (!COORD_DATA || !COORD_DATA.ok) {
+    container.innerHTML = `<p class="coord-error">⚠ Error cargando datos de coordinación: ${(COORD_DATA||{}).error||'desconocido'}</p>`;
+    return;
+  }
+
+  const { semanas, asignaturas, actividades } = COORD_DATA;
+
+  // Inicializar filtro de tipos visible (todos activos por defecto)
+  if (!coordTiposVisible) coordTiposVisible = new Set(COORD_TIPOS.map(t => t.codigo));
+
+  // Actividades visibles según filtro activo
+  const actividadesVisibles = actividades.filter(a => coordTiposVisible.has(a.tipo_actividad));
+
+  // Índice actividades: "semana_asigId" → [acts]
+  const actMap = new Map();
+  for (const act of actividadesVisibles) {
+    const k = `${act.semana_num}_${act.asignatura_id}`;
+    if (!actMap.has(k)) actMap.set(k, []);
+    actMap.get(k).push(act);
+  }
+
+  // Carga total por semana (solo tipos visibles, para colorear cabecera de columna)
+  const cargaSemana = {};
+  for (const act of actividadesVisibles)
+    cargaSemana[act.semana_num] = (cargaSemana[act.semana_num] || 0) + 1;
+
+  // Botones de filtro (toggle por tipo de actividad)
+  const filtrosHTML = COORD_TIPOS.map(t => {
+    const activo = coordTiposVisible.has(t.codigo);
+    const style  = activo
+      ? `background:${t.color};color:#fff;border-color:${t.color}`
+      : `background:#e5e7eb;color:#6b7280;border-color:#d1d5db;text-decoration:line-through`;
+    const lock = t.sync ? '🔒' : '';
+    return `<button class="coord-filtro-btn" style="${style}"
+               onclick="toggleCoordTipo('${t.codigo}')"
+               title="${_escHtml(t.desc)}">${lock}${t.codigo}</button>`;
+  }).join('');
+
+  // ── Cabecera: fila de semanas ──────────────────────────────────────────────
+  const headCols = semanas.map(sem => {
+    const carga = cargaSemana[sem.numero] || 0;
+    const bg = carga >= COORD_OVERLOAD_THRESHOLD ? 'background:#fca5a5'
+             : carga >= COORD_WARN_THRESHOLD      ? 'background:#fde68a' : '';
+    const tip = sem.descripcion + (carga ? ` (${carga} actividades)` : '');
+    return `<th class="coord-sem-col-th" style="${bg}">S${sem.numero}<span class="coord-tip">${_escHtml(tip)}</span></th>`;
+  }).join('');
+
+  // ── Filas: una por asignatura ─────────────────────────────────────────────
+  const bodyRows = asignaturas.map(asig => {
+    const colCls = getSubjectColor(asig.codigo);
+    const cells = semanas.map(sem => {
+      const k    = `${sem.numero}_${asig.id}`;
+      const acts = actMap.get(k) || [];
+      const badges = acts.map(a => {
+        const t   = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
+        const col = t ? t.color : '#888';
+        const lbl = a.sincronizado ? `🔒${a.tipo_actividad}` : a.tipo_actividad;
+        const tip = (t ? t.desc : a.tipo_actividad) + (a.notas ? ': ' + a.notas : '');
+        return `<span class="coord-badge" style="background:${col}" title="${_escHtml(tip)}">${lbl}</span>`;
+      }).join('');
+      // Colorear celda si la semana está cargada
+      const carga = cargaSemana[sem.numero] || 0;
+      const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? 'coord-cell-overload'
+                   : carga >= COORD_WARN_THRESHOLD      ? 'coord-cell-busy' : '';
+      return `<td class="coord-cell ${cellBg}"
+                  onclick="openCoordModal(${sem.numero},${asig.id},'${_escHtml(asig.codigo)}','${_escHtml(asig.nombre).replace(/'/g,"&#39;")}')">${badges}</td>`;
+    }).join('');
+
+    return `<tr>
+      <td class="coord-asig-row-cell ${colCls}" title="${_escHtml(asig.nombre)}">
+        <span class="coord-asig-nombre">${_escHtml(asig.nombre)}</span>
+        <small class="coord-asig-codigo">${asig.codigo}</small>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="coord-toolbar">
+      <button class="btn-secondary coord-sync-btn" onclick="syncCoordinacion().then(()=>renderCoordinacion())">↻ Sincronizar horario</button>
+      <button class="btn-secondary" onclick="exportCoordCSV()">⬇ Exportar CSV</button>
+      <div class="coord-filtros" title="Haz clic para mostrar u ocultar cada tipo de actividad">${filtrosHTML}</div>
+    </div>
+    <div class="coord-hint">Haz clic en cualquier celda para añadir o eliminar actividades. Pasa el cursor sobre S1, S2… para ver las fechas.</div>
+    <div class="coord-table-wrap">
+      <table class="coord-table">
+        <thead>
+          <tr>
+            <th class="coord-asig-header-th">Asignatura</th>
+            ${headCols}
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`;
+}
+
+
+function openCoordModal(semanaNum, asignaturaId, codigo, nombre) {
+  const grupoKey = `${currentCurso}_${currentCuat}_grupo_${currentGroup}`;
+  const existing = (COORD_DATA ? COORD_DATA.actividades : []).filter(
+    a => a.semana_num === semanaNum && a.asignatura_id === asignaturaId
+  );
+
+  // Cabecera
+  document.getElementById('coordModalTitle').textContent = nombre;
+
+  // Línea de semana
+  const semInfo = (COORD_DATA.semanas||[]).find(s => s.numero === semanaNum);
+  const semDesc = semInfo ? semInfo.descripcion.replace(/^SEMANA \d+:\s*/i,'') : `Semana ${semanaNum}`;
+  document.getElementById('coordModalSem').textContent = '📅 ' + semDesc;
+
+  // Advertencias
+  const warnings = _coordWarnings(semanaNum);
+  const warnEl = document.getElementById('coordModalWarn');
+  if (warnings.length) {
+    warnEl.textContent = '⚠ ' + warnings.join(' · ');
+    warnEl.style.display = '';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // Lista de tipos de actividad
+  // Los tipos auto-sincronizados (LAB/INF/EXP) se muestran solo como info,
+  // sin checkbox: el usuario no puede añadirlos ni quitarlos manualmente.
+  const listEl = document.getElementById('coordModalList');
+
+  const syncActivos = COORD_TIPOS.filter(t => t.sync && existing.find(a => a.tipo_actividad === t.codigo));
+  const syncInfoHTML = syncActivos.length
+    ? `<div class="coord-sync-info">
+        <span class="coord-sync-info-lbl">🔒 Desde el horario:</span>
+        ${syncActivos.map(t =>
+          `<span class="coord-badge" style="background:${t.color}" title="${t.desc}">${t.codigo}</span>`
+        ).join('')}
+       </div>`
+    : '';
+
+  const manualesHTML = COORD_TIPOS.filter(t => !t.sync).map(t => {
+    const act      = existing.find(a => a.tipo_actividad === t.codigo);
+    const isOn     = !!act;
+    const notasVal = act ? _escHtml(act.notas||'') : '';
+    const notasInput = isOn
+      ? `<input class="coord-notas-inline" type="text" placeholder="Nota opcional"
+               value="${notasVal}"
+               onchange="updateCoordNotas('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.value)">`
+      : '';
+    return `<label class="coord-tipo-row">
+      <input type="checkbox" data-tipo="${t.codigo}"
+             ${isOn?'checked':''}
+             onchange="toggleCoordActividad('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.checked,${semanaNum},${asignaturaId},'${_escHtml(codigo)}','${_escHtml(nombre).replace(/'/g,"\\'")}')">
+      <span class="coord-badge" style="background:${t.color}">${t.codigo}</span>
+      <span class="coord-tipo-desc">${t.desc}</span>
+      ${notasInput}
+    </label>`;
+  }).join('');
+
+  listEl.innerHTML = syncInfoHTML + manualesHTML;
+
+  document.getElementById('coordModalOverlay').classList.add('open');
+}
+
+function closeCoordModal() {
+  document.getElementById('coordModalOverlay').classList.remove('open');
+}
+
+async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, checked,
+                                       _semNum, _asigId, _codigo, _nombre) {
+  const notasInput = event.target.closest('.coord-tipo-row')
+                          ?.querySelector('.coord-notas-inline');
+  const notas = notasInput ? notasInput.value : '';
+  await fetch('/api/coordinacion/set', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      grupo_key: grupoKey, semana_num: semanaNum,
+      asignatura_id: asignaturaId, tipo_actividad: tipo,
+      notas: notas, action: checked ? 'add' : 'remove'
+    })
+  });
+  // Recargar datos y re-renderizar la matriz
+  const params = new URLSearchParams({
+    curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
+  });
+  const r = await fetch(`/api/coordinacion?${params}`);
+  COORD_DATA = await r.json();
+  renderCoordinacion();
+  // Re-abrir el modal de coordinación con datos frescos
+  const asig = (COORD_DATA.asignaturas||[]).find(a => a.id === asignaturaId);
+  openCoordModal(semanaNum, asignaturaId,
+    asig ? asig.codigo : _codigo,
+    asig ? asig.nombre : _nombre);
+}
+
+async function updateCoordNotas(grupoKey, semanaNum, asignaturaId, tipo, notas) {
+  await fetch('/api/coordinacion/set', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      grupo_key: grupoKey, semana_num: semanaNum,
+      asignatura_id: asignaturaId, tipo_actividad: tipo,
+      notas: notas, action: 'add'
+    })
+  });
+  const params = new URLSearchParams({
+    curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
+  });
+  const r = await fetch(`/api/coordinacion?${params}`);
+  COORD_DATA = await r.json();
+  renderCoordinacion();
+}
+
+function _coordWarnings(semanaNum) {
+  if (!COORD_DATA) return [];
+  const acts = COORD_DATA.actividades.filter(a => a.semana_num === semanaNum);
+  const w = [];
+  const nExam = acts.filter(a => a.tipo_actividad==='EXP'||a.tipo_actividad==='EXF').length;
+  if (nExam >= 3) w.push(`${nExam} exámenes en esta semana`);
+  if (acts.length >= COORD_OVERLOAD_THRESHOLD) w.push(`${acts.length} actividades en total esta semana`);
+  return w;
+}
+
+function exportCoordCSV() {
+  if (!COORD_DATA || !COORD_DATA.ok) return;
+  const { semanas, asignaturas, actividades } = COORD_DATA;
+  const actMap = new Map();
+  for (const a of actividades) {
+    const k = `${a.semana_num}_${a.asignatura_id}`;
+    if (!actMap.has(k)) actMap.set(k, []);
+    actMap.get(k).push(a.tipo_actividad + (a.sincronizado?'*':'') + (a.notas?`(${a.notas})`:''));
+  }
+  let csv = ['Semana', ...asignaturas.map(a=>a.nombre)].join(';') + '\n';
+  for (const sem of semanas) {
+    const row = [sem.descripcion];
+    for (const asig of asignaturas) {
+      const acts = actMap.get(`${sem.numero}_${asig.id}`) || [];
+      row.push(acts.join(' | '));
+    }
+    csv += row.join(';') + '\n';
+  }
+  const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `coordinacion_${COORD_DATA.grupo_key}.csv`;
+  link.click();
+}
+
+// ── Fin Coordinación Horizontal ───────────────────────────────────────────────
+
+// ─── EXPORTACIÓN PDF COORDINACIÓN HORIZONTAL ─────────────────────────────────
+
+// Helper: genera el HTML interior del contenedor de captura para una coordinación.
+// Devuelve { html, containerWidth } para que el llamador ajuste cap.style.width.
+function _buildCoordCaptureHTML(coordData) {
+  const { semanas, asignaturas, actividades: _todasActividades } = coordData;
+
+  // Aplicar filtro de tipos visible (igual que en la vista interactiva)
+  const visibles = coordTiposVisible || new Set(COORD_TIPOS.map(t => t.codigo));
+  const actividades = _todasActividades.filter(a => visibles.has(a.tipo_actividad));
+
+  const actMap = new Map();
+  for (const a of actividades) {
+    const k = `${a.semana_num}_${a.asignatura_id}`;
+    if (!actMap.has(k)) actMap.set(k, []);
+    actMap.get(k).push(a);
+  }
+  const cargaSemana = {};
+  for (const a of actividades) cargaSemana[a.semana_num] = (cargaSemana[a.semana_num]||0)+1;
+
+  // Anchos
+  const maxChars = asignaturas.reduce((m,a) => Math.max(m, (a.nombre||'').length), 0);
+  const COL_ASIG_W = Math.min(Math.max(Math.round(maxChars * 5.5) + 20, 120), 220);
+  const colW = 38;
+  const containerWidth = Math.max(COL_ASIG_W + colW * semanas.length + 20, 900);
+
+  const headCols = semanas.map(sem => {
+    const carga = cargaSemana[sem.numero]||0;
+    const bg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fca5a5'
+             : carga >= COORD_WARN_THRESHOLD      ? '#fde68a' : '#e8eaf6';
+    return `<th style="background:${bg};font-size:9px;padding:3px 2px;text-align:center;
+              border:1px solid #bbb;width:${colW}px;font-weight:700;color:#1a237e">
+              S${sem.numero}</th>`;
+  }).join('');
+
+  const bodyRows = asignaturas.map(asig => {
+    const cells = semanas.map(sem => {
+      const k = `${sem.numero}_${asig.id}`;
+      const acts = actMap.get(k)||[];
+      const carga = cargaSemana[sem.numero]||0;
+      const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fff0f0'
+                   : carga >= COORD_WARN_THRESHOLD      ? '#fffbea' : '#fff';
+      const badges = acts.map(a => {
+        const t = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
+        const col = t ? t.color : '#888';
+        return `<span style="display:inline-block;background:${col};color:#fff;font-size:7.5px;
+                  font-weight:700;padding:1px 3px;border-radius:2px;margin:1px;line-height:1.4">
+                  ${a.tipo_actividad}</span>`;
+      }).join('');
+      return `<td style="border:1px solid #ddd;padding:2px;background:${cellBg};
+                vertical-align:middle;text-align:center;width:${colW}px">${badges}</td>`;
+    }).join('');
+    const short = asig.nombre.length > 28 ? asig.nombre.substring(0,26)+'…' : asig.nombre;
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:4px 6px;background:#f5f5f5;
+                 white-space:normal;word-break:break-word;font-size:9px;
+                 vertical-align:middle;width:${COL_ASIG_W}px;min-width:${COL_ASIG_W}px">
+        <strong>${_escHtml(short)}</strong><br>
+        <span style="color:#777;font-size:8px">${asig.codigo}</span>
+      </td>${cells}</tr>`;
+  }).join('');
+
+  const leyenda = COORD_TIPOS.filter(t => visibles.has(t.codigo)).map(t =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:9px">
+       <span style="background:${t.color};color:#fff;padding:1px 5px;border-radius:3px;
+                    font-weight:700;font-size:8.5px">${t.codigo}</span>${t.desc}
+     </span>`
+  ).join('');
+
+  const html = `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;padding:6px 0">
+      <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:2px">${leyenda}</div>
+      <table style="border-collapse:collapse;table-layout:fixed;font-size:10px">
+        <thead>
+          <tr>
+            <th style="background:#c5cae9;font-size:10px;padding:5px 7px;text-align:left;
+                       border:1px solid #bbb;white-space:nowrap;
+                       width:${COL_ASIG_W}px;min-width:${COL_ASIG_W}px">Asignatura</th>
+            ${headCols}
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+      <div style="margin-top:6px;font-size:8px;color:#888">
+        🔒 = sincronizado desde el horario &nbsp;·&nbsp;
+        Fondo amarillo = semana con carga moderada &nbsp;·&nbsp;
+        Fondo rojo = semana sobrecargada
+      </div>
+    </div>`;
+
+  return { html, containerWidth };
+}
+
+// Helper: añade la cabecera jsPDF de una página de coordinación (logo + textos)
+function _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel) {
+  const PW = pdf.internal.pageSize.getWidth();
+  // Logo (igual que exportPDF principal)
+  if (logo) {
+    const lh = 10, lw = lh * (1528.08 / 181.707);
+    pdf.addImage(logo, 'PNG', PW - 8 - lw, 1.5, lw, lh);
+  }
+  // Línea 1: nombre completo del grado (gris pequeño)
+  pdf.setFontSize(8); pdf.setTextColor(90, 106, 122);
+  pdf.text(typeof DEGREE_NAME !== 'undefined' ? DEGREE_NAME : DEGREE_ACRONYM, 8, 5.5);
+  // Línea 2: acrónimo · curso · cuatrimestre · grupo (azul institucional)
+  pdf.setFontSize(11); pdf.setTextColor(26, 58, 107);
+  pdf.text(`${DEGREE_ACRONYM}  ·  ${cursoLabel}  ·  ${cuatLabel}  ·  ${grupoLabel}`, 8, 12);
+  // Separador
+  pdf.setDrawColor(180, 190, 210); pdf.setLineWidth(0.3);
+  pdf.line(8, 14, PW - 8, 14);
+}
+
+// ── Exportación PDF del grupo actual ─────────────────────────────────────────
+async function exportCoordPDF() {
+  if (!COORD_DATA || !COORD_DATA.ok) {
+    alert('Primero abre la vista Coordinación para cargar los datos.');
+    return;
+  }
+  const btn = document.getElementById('btnExportCoordPdf');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando…'; }
+
+  showPdfOverlay();
+  setPdfProgress(5, 'Cargando librerías…');
+
+  try {
+    const [, logo] = await Promise.all([loadPdfLibs(), _loadLogo()]);
+    const { jsPDF } = window.jspdf;
+
+    setPdfProgress(20, 'Construyendo tabla…');
+
+    const gData = DB && DB.grupos ? DB.grupos[COORD_DATA.grupo_key] : null;
+    const _ord  = ['','1.º','2.º','3.º','4.º','5.º','6.º'];
+    const _cuat = {'1C':'1.er Cuatrimestre','2C':'2.º Cuatrimestre','A':'Anual'};
+    const cursoLabel = gData ? (_ord[gData.curso] || gData.curso+'.º') : '';
+    const cuatLabel  = gData ? (_cuat[gData.cuatrimestre] || gData.cuatrimestre) : '';
+    const grupoLabel = gData ? 'Grupo ' + gData.grupo : COORD_DATA.grupo_key;
+
+    const { html, containerWidth } = _buildCoordCaptureHTML(COORD_DATA);
+    const cap = makeCaptureContainer();
+    cap.style.width = containerWidth + 'px';
+    cap.innerHTML = html;
+
+    document.body.appendChild(cap);
+    await new Promise(r => setTimeout(r, 120));
+    setPdfProgress(55, 'Capturando imagen…');
+
+    const canvas = await html2canvas(cap, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
+    });
+    document.body.removeChild(cap);
+
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
+
+    setPdfProgress(80, 'Generando PDF…');
+    const PW = pdf.internal.pageSize.getWidth();
+    const PH = pdf.internal.pageSize.getHeight();
+    const ratio = canvas.width / canvas.height;
+    const availW = PW - 16, availH = PH - 20;
+    let iw = availW, ih = availW / ratio;
+    if (ih > availH) { ih = availH; iw = availH * ratio; }
+    const ox = (PW - iw) / 2;
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', ox, 16, iw, ih);
+
+    setPdfProgress(95, 'Descargando…');
+    pdf.save(`${EXPORT_PREFIX || 'coordinacion'}_${COORD_DATA.grupo_key}.pdf`);
+    setPdfProgress(100, '¡Listo!');
+    setTimeout(hidePdfOverlay, 600);
+
+  } catch(e) {
+    hidePdfOverlay();
+    alert('Error al generar PDF: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+// ── Exportación PDF de TODOS los grupos (una página por grupo) ────────────────
+async function exportCoordAllPDF() {
+  if (!DB || !DB.grupos) {
+    alert('Los datos del horario no están cargados. Abre cualquier vista primero.');
+    return;
+  }
+  const allKeys = Object.keys(DB.grupos).sort();
+  if (!allKeys.length) { alert('No hay grupos disponibles.'); return; }
+
+  const btn = document.getElementById('btnExportCoordAllPdf');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando…'; }
+
+  showPdfOverlay();
+  setPdfProgress(3, 'Cargando librerías…');
+
+  try {
+    const [, logo] = await Promise.all([loadPdfLibs(), _loadLogo()]);
+    const { jsPDF } = window.jspdf;
+
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const PW = pdf.internal.pageSize.getWidth();
+    const PH = pdf.internal.pageSize.getHeight();
+    const _ord  = ['','1.º','2.º','3.º','4.º','5.º','6.º'];
+    const _cuat = {'1C':'1.er Cuatrimestre','2C':'2.º Cuatrimestre','A':'Anual'};
+
+    const cap = makeCaptureContainer();
+    document.body.appendChild(cap);
+    let pagesAdded = 0;
+
+    for (let i = 0; i < allKeys.length; i++) {
+      const gKey  = allKeys[i];
+      const gData = DB.grupos[gKey];
+      const pct   = Math.round(8 + (i / allKeys.length) * 84);
+      setPdfProgress(pct, `(${i+1}/${allKeys.length}) ${gKey.replace(/_/g,' · ')}…`);
+
+      // Obtener datos de coordinación para este grupo
+      let cData;
+      try {
+        // grupo_key formato: '{curso}_{cuatrimestre}_grupo_{grupo}'
+        const _kParts = gKey.match(/^(\d+)_([^_]+)_grupo_(\d+)$/);
+        if (!_kParts) { console.warn('coord skip: key inesperada', gKey); continue; }
+        const [, _kCurso, _kCuat, _kGrupo] = _kParts;
+        // Sincronizar primero (LAB/INF/EXP desde horario) antes de leer datos
+        await fetch('/api/coordinacion/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grupo_key: gKey })
+        });
+        const r = await fetch(`/api/coordinacion?curso=${_kCurso}&cuatrimestre=${encodeURIComponent(_kCuat)}&grupo=${_kGrupo}`);
+        cData = await r.json();
+      } catch(e) {
+        console.warn('coord skip', gKey, e);
+        continue;
+      }
+      if (!cData || !cData.ok || !cData.asignaturas || !cData.asignaturas.length) continue;
+
+      // Nueva página (la primera usa la que crea jsPDF al instanciar)
+      if (pagesAdded > 0) pdf.addPage('a4', 'l');
+
+      // Cabecera de página
+      const cursoLabel = _ord[gData.curso] || gData.curso + '.º';
+      const cuatLabel  = _cuat[gData.cuatrimestre] || gData.cuatrimestre;
+      const grupoLabel = 'Grupo ' + gData.grupo;
+      _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
+
+      // Construir tabla y capturar
+      const { html, containerWidth } = _buildCoordCaptureHTML(cData);
+      cap.style.width = containerWidth + 'px';
+      cap.innerHTML = html;
+      await new Promise(r => setTimeout(r, 80));
+
+      const canvas = await html2canvas(cap, {
+        scale: 1.8, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
+      });
+
+      const ratio  = canvas.width / canvas.height;
+      const availW = PW - 16, availH = PH - 20;
+      let iw = availW, ih = availW / ratio;
+      if (ih > availH) { ih = availH; iw = availH * ratio; }
+      const ox = (PW - iw) / 2;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.90), 'JPEG', ox, 16, iw, ih);
+
+      pagesAdded++;
+    }
+
+    document.body.removeChild(cap);
+
+    if (pagesAdded === 0) {
+      alert('No se encontraron datos de coordinación en ningún grupo.');
+      return;
+    }
+
+    setPdfProgress(97, 'Descargando…');
+    pdf.save(`coordinacion_completa_${EXPORT_PREFIX || 'grado'}.pdf`);
+    setPdfProgress(100, '¡Listo!');
+    setTimeout(hidePdfOverlay, 600);
+
+  } catch(e) {
+    hidePdfOverlay();
+    alert('Error al generar PDF: ' + e.message);
+    console.error(e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+// ── Fin exportación PDF Coordinación ─────────────────────────────────────────

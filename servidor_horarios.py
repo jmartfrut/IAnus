@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.37.9"
+APP_VERSION = "1.39.3"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -456,6 +456,20 @@ def api_update_clase(data):
                   )
             """, (clase_id, dia_cls, cuat_cls, numero_cls))
 
+    # Sincronizar coordinacion_actividades si el tipo afecta al calendario de coord.
+    tipo_nuevo = data.get("tipo", "")
+    if tipo_nuevo in COORD_SYNC_TIPOS or (
+        conn.execute("SELECT tipo FROM clases WHERE id=?", (clase_id,)).fetchone() or {}
+    ).get("tipo", "") in COORD_SYNC_TIPOS:
+        gk_row = conn.execute("""
+            SELECT g.clave FROM clases cl
+            JOIN semanas s ON cl.semana_id = s.id
+            JOIN grupos g ON s.grupo_id = g.id
+            WHERE cl.id = ?
+        """, (clase_id,)).fetchone()
+        if gk_row:
+            _sync_coord_for_key(conn, gk_row["clave"])
+
     conn.commit()
     conn.close()
     return {"ok": True, "id": clase_id, "linked_updated": linked_updated}
@@ -517,6 +531,18 @@ def api_create_clase(data):
                   1 if data.get("es_no_lectivo") else 0, data.get("contenido",""), af_cat, conjunto_id))
             created.append(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
+    # Sincronizar coordinacion_actividades si el tipo afecta al calendario de coord.
+    if data.get("tipo", "") in COORD_SYNC_TIPOS:
+        sem_id = semana_ids[0] if semana_ids else None
+        if sem_id:
+            gk_row = conn.execute("""
+                SELECT g.clave FROM semanas s
+                JOIN grupos g ON s.grupo_id = g.id
+                WHERE s.id = ?
+            """, (sem_id,)).fetchone()
+            if gk_row:
+                _sync_coord_for_key(conn, gk_row["clave"])
+
     conn.commit()
     conn.close()
 
@@ -532,6 +558,17 @@ def api_delete_clase(data):
     if not clase_id:
         return {"error": "ID de clase requerido"}
     conn = get_db()
+    # Leer tipo y grupo ANTES de borrar para poder re-sincronizar coordinación
+    pre_row = conn.execute("""
+        SELECT cl.tipo, g.clave AS grupo_key
+        FROM clases cl
+        JOIN semanas s ON cl.semana_id = s.id
+        JOIN grupos g ON s.grupo_id = g.id
+        WHERE cl.id = ?
+    """, (clase_id,)).fetchone()
+    pre_tipo      = (pre_row["tipo"]      if pre_row else "") or ""
+    pre_grupo_key = (pre_row["grupo_key"] if pre_row else "") or ""
+
     deleted = 1
     if data.get("delete_conjunto"):
         row = conn.execute("SELECT conjunto_id FROM clases WHERE id=?", (clase_id,)).fetchone()
@@ -540,10 +577,14 @@ def api_delete_clase(data):
                 "DELETE FROM clases WHERE conjunto_id=?", (row["conjunto_id"],)
             )
             deleted = res.rowcount
+            if pre_tipo in COORD_SYNC_TIPOS and pre_grupo_key:
+                _sync_coord_for_key(conn, pre_grupo_key)
             conn.commit()
             conn.close()
             return {"ok": True, "deleted": deleted}
     conn.execute("DELETE FROM clases WHERE id=?", (clase_id,))
+    if pre_tipo in COORD_SYNC_TIPOS and pre_grupo_key:
+        _sync_coord_for_key(conn, pre_grupo_key)
     conn.commit()
     conn.close()
     return {"ok": True, "deleted": deleted}
@@ -1654,6 +1695,210 @@ def api_reload_fichas(_data):
     }
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CALENDARIO DE COORDINACIÓN HORIZONTAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COORD_SYNC_TIPOS = {"LAB", "INF", "EXP"}
+
+
+def _sync_coord_for_key(conn, grupo_key):
+    """Re-sincroniza actividades automáticas (LAB/INF/EXP) en coordinacion_actividades.
+    Llama a esta función con la conexión ya abierta tras cualquier INSERT/UPDATE/DELETE
+    en clases cuyo tipo sea LAB, INF o EXP.
+    LAB e INF: solo subgrupo vacío, '1' o que termine en '-1'.
+    EXP: todos los subgrupos.
+    """
+    from datetime import datetime as _dt
+    parts = grupo_key.split("_")
+    if len(parts) < 4:
+        return
+    curso, cuatrimestre, grupo_num = parts[0], parts[1], parts[3]
+
+    g = conn.execute(
+        "SELECT id FROM grupos WHERE curso=? AND cuatrimestre=? AND grupo=?",
+        (curso, cuatrimestre, grupo_num)
+    ).fetchone()
+    if not g:
+        return
+
+    # Borrar solo entradas auto-sincronizadas previas
+    conn.execute(
+        "DELETE FROM coordinacion_actividades WHERE grupo_key=? AND sincronizado=1",
+        (grupo_key,)
+    )
+
+    clases = conn.execute("""
+        SELECT s.numero AS semana_num, cl.asignatura_id, cl.tipo, cl.subgrupo
+        FROM clases cl
+        JOIN semanas s ON cl.semana_id = s.id
+        WHERE s.grupo_id = ?
+          AND cl.tipo IN ('LAB', 'INF', 'EXP')
+          AND cl.es_no_lectivo = 0
+          AND cl.asignatura_id IS NOT NULL
+    """, (g["id"],)).fetchall()
+
+    ts = _dt.utcnow().isoformat()
+    seen = set()
+    for cl in clases:
+        tipo     = cl["tipo"]
+        subgrupo = (cl["subgrupo"] or "").strip()
+        # LAB e INF: solo subgrupo principal
+        if tipo in ("LAB", "INF"):
+            if subgrupo and subgrupo != "1" and not subgrupo.endswith("-1"):
+                continue
+        key = (grupo_key, cl["semana_num"], cl["asignatura_id"], tipo)
+        if key in seen:
+            continue
+        seen.add(key)
+        conn.execute("""
+            INSERT OR IGNORE INTO coordinacion_actividades
+                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts)
+            VALUES (?, ?, ?, ?, '', 1, ?)
+        """, (*key, ts))
+
+
+def api_get_coordinacion(params):
+    """GET /api/coordinacion?curso=&cuatrimestre=&grupo=
+    Devuelve semanas, asignaturas del cuatrimestre/curso y actividades registradas."""
+    curso        = params.get("curso",        ["1"])[0]
+    cuatrimestre = params.get("cuatrimestre", ["1C"])[0]
+    grupo        = params.get("grupo",        ["1"])[0]
+    grupo_key    = f"{curso}_{cuatrimestre}_grupo_{grupo}"
+
+    conn = get_db()
+    # Garantizar tabla (por si el servidor arrancó antes de aplicar _m19)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS coordinacion_actividades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo_key TEXT NOT NULL, semana_num INTEGER NOT NULL,
+            asignatura_id INTEGER NOT NULL REFERENCES asignaturas(id) ON DELETE CASCADE,
+            tipo_actividad TEXT NOT NULL, notas TEXT DEFAULT '',
+            sincronizado INTEGER DEFAULT 0, ts TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
+        ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad)
+    """)
+    conn.commit()
+    g = conn.execute(
+        "SELECT id FROM grupos WHERE curso=? AND cuatrimestre=? AND grupo=?",
+        (curso, cuatrimestre, grupo)
+    ).fetchone()
+    if not g:
+        conn.close()
+        return {"ok": False, "error": "Grupo no encontrado"}
+
+    semanas = conn.execute(
+        "SELECT numero, descripcion FROM semanas WHERE grupo_id=? ORDER BY numero",
+        (g["id"],)
+    ).fetchall()
+
+    # Asignaturas que tienen clases en este grupo (excluir no-lectivos).
+    # No filtramos por a.curso / a.cuatrimestre: el grupo_id ya lo acota
+    # y en BDs antiguas esas columnas pueden ser NULL o no existir.
+    asigs = conn.execute("""
+        SELECT DISTINCT a.id, a.codigo, a.nombre
+        FROM asignaturas a
+        JOIN clases cl ON cl.asignatura_id = a.id
+        JOIN semanas s  ON cl.semana_id = s.id
+        WHERE s.grupo_id = ?
+          AND cl.es_no_lectivo = 0
+        ORDER BY a.nombre
+    """, (g["id"],)).fetchall()
+
+    actividades = conn.execute("""
+        SELECT id, semana_num, asignatura_id, tipo_actividad, notas, sincronizado
+        FROM coordinacion_actividades
+        WHERE grupo_key = ?
+        ORDER BY semana_num, asignatura_id
+    """, (grupo_key,)).fetchall()
+
+    conn.close()
+    return {
+        "ok":          True,
+        "grupo_key":   grupo_key,
+        "semanas":     [dict(s) for s in semanas],
+        "asignaturas": [dict(a) for a in asigs],
+        "actividades": [dict(x) for x in actividades],
+    }
+
+
+def api_set_coordinacion(data):
+    """POST /api/coordinacion/set — Añade o elimina una actividad manual.
+    Las actividades sincronizadas (sincronizado=1) son de solo lectura."""
+    grupo_key     = data.get("grupo_key", "")
+    semana_num    = int(data.get("semana_num", 0))
+    asignatura_id = int(data.get("asignatura_id", 0))
+    tipo          = data.get("tipo_actividad", "")
+    notas         = data.get("notas", "")
+    action        = data.get("action", "add")   # "add" | "remove"
+
+    VALID_TIPOS   = {"LAB", "INF", "SEM", "EXP", "EXF", "TE", "EO", "OA"}
+    MANUAL_TIPOS  = {"SEM", "EXF", "TE", "EO", "OA"}   # los sync solo vienen del horario
+    if tipo not in VALID_TIPOS:
+        return {"ok": False, "error": f"Tipo '{tipo}' no válido"}
+    if tipo not in MANUAL_TIPOS:
+        return {"ok": False, "error": f"'{tipo}' se sincroniza automáticamente desde el horario y no puede añadirse manualmente"}
+    if not grupo_key or not semana_num or not asignatura_id:
+        return {"ok": False, "error": "Parámetros incompletos"}
+
+    from datetime import datetime as _dt
+    ts = _dt.utcnow().isoformat()
+
+    conn = get_db()
+    # Proteger actividades sincronizadas
+    existing = conn.execute("""
+        SELECT sincronizado FROM coordinacion_actividades
+        WHERE grupo_key=? AND semana_num=? AND asignatura_id=? AND tipo_actividad=?
+    """, (grupo_key, semana_num, asignatura_id, tipo)).fetchone()
+
+    if existing and existing["sincronizado"] == 1:
+        conn.close()
+        return {"ok": False, "error": "Actividad sincronizada automáticamente, no editable manualmente"}
+
+    if action == "remove":
+        conn.execute("""
+            DELETE FROM coordinacion_actividades
+            WHERE grupo_key=? AND semana_num=? AND asignatura_id=? AND tipo_actividad=?
+              AND sincronizado = 0
+        """, (grupo_key, semana_num, asignatura_id, tipo))
+    else:
+        conn.execute("""
+            INSERT INTO coordinacion_actividades
+                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
+            ON CONFLICT(grupo_key, semana_num, asignatura_id, tipo_actividad)
+            DO UPDATE SET notas=excluded.notas, ts=excluded.ts
+            WHERE sincronizado = 0
+        """, (grupo_key, semana_num, asignatura_id, tipo, notas, ts))
+
+    conn.commit()
+    conn.close()
+    return {"ok": True, "action": action}
+
+
+def api_sync_coordinacion(data):
+    """POST /api/coordinacion/sync — Re-sincroniza actividades automáticas desde el horario.
+    Borra las entradas sincronizado=1 del grupo y las reinsertta desde clases actuales."""
+    grupo_key = data.get("grupo_key", "")
+    if not grupo_key:
+        return {"ok": False, "error": "grupo_key requerido"}
+
+    conn = get_db()
+    _sync_coord_for_key(conn, grupo_key)
+    conn.commit()
+
+    n = conn.execute(
+        "SELECT COUNT(*) FROM coordinacion_actividades WHERE grupo_key=? AND sincronizado=1",
+        (grupo_key,)
+    ).fetchone()[0]
+    conn.close()
+    return {"ok": True, "sincronizadas": n}
+
+
 def api_dtie_sync(_data):
     """POST /api/dtie/sync — ejecuta sync_dtie.py sobre el DTIE activo y devuelve
     el log completo. Solo disponible si el grado tiene 'dtie: true' en config.json."""
@@ -1717,6 +1962,9 @@ API_ROUTES = {
     "/api/sinc/exclusion/toggle":    ("POST", api_sinc_exclusion_toggle),
     "/api/fichas/reload":            ("POST", api_reload_fichas),
     "/api/dtie/sync":                ("POST", api_dtie_sync),
+    "/api/coordinacion":             ("GET",  api_get_coordinacion),
+    "/api/coordinacion/set":         ("POST", api_set_coordinacion),
+    "/api/coordinacion/sync":        ("POST", api_sync_coordinacion),
 }
 
 TEMPLATE_PATH = None  # Plantilla no requerida; el Excel se genera desde cero
@@ -1749,8 +1997,11 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             self.serve_classrooms()
         elif parsed.path in API_ROUTES and API_ROUTES[parsed.path][0] == "GET":
             params = parse_qs(parsed.query)
-            result = API_ROUTES[parsed.path][1](params)
-            self.send_json(result)
+            try:
+                result = API_ROUTES[parsed.path][1](params)
+                self.send_json(result)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
         else:
             self.send_error(404)
 

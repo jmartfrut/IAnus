@@ -473,3 +473,92 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .mirror-excl-btn:hover{background:rgba(0,0,0,.22);color:#555}
 .subject-card.mirror-excluded{outline:2px dashed #dc2626;outline-offset:-3px;opacity:.85}
 .subject-card.mirror-excluded .subject-name::after{content:" 🔒";font-size:.7em;opacity:.7}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CALENDARIO DE COORDINACIÓN HORIZONTAL
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Toolbar */
+.coord-toolbar{display:flex;align-items:center;gap:10px;padding:10px 0 12px;flex-wrap:wrap}
+.coord-sync-btn{min-width:160px}
+.coord-leyenda{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.coord-leg-item{display:flex;align-items:center;gap:4px;font-size:.76rem;color:var(--text-light,#555)}
+.coord-leg-desc{white-space:nowrap}
+/* Botones de filtro de tipos en coordinación */
+.coord-filtros{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.coord-filtro-btn{padding:3px 9px;font-size:.75rem;font-weight:600;border:1px solid;border-radius:12px;cursor:pointer;transition:opacity .15s,transform .1s;letter-spacing:.02em}
+.coord-filtro-btn:hover{opacity:.85;transform:scale(1.05)}
+.coord-hint{font-size:.78rem;color:var(--text-light,#888);margin-bottom:8px}
+
+/* Wrapper con scroll doble */
+.coord-table-wrap{overflow:auto;max-height:calc(100vh - 210px);border:1px solid var(--border,#ddd);border-radius:6px}
+
+/* Tabla principal */
+.coord-table{border-collapse:collapse;min-width:100%;font-size:.8rem;background:#fff}
+.coord-table th,.coord-table td{border:1px solid var(--border,#ddd);padding:4px 5px;vertical-align:top}
+
+/* Cabecera fila semanas — sticky top */
+.coord-table thead th{position:sticky;top:0;z-index:3;background:var(--bg-secondary,#f5f5f5);
+  text-align:center;white-space:nowrap;line-height:1.2;font-size:.75rem}
+.coord-asig-header-th{position:sticky;top:0;left:0;z-index:4;background:var(--bg-secondary,#f5f5f5);
+  text-align:left;padding:5px 8px;width:1%;white-space:nowrap;border-right:2px solid var(--border,#ddd)}
+.coord-sem-col-th{min-width:38px;width:38px;padding:4px 2px;font-weight:700;
+  color:var(--primary,#1976d2);font-size:.73rem;cursor:help;position:relative}
+/* Tooltip de semana */
+.coord-sem-col-th .coord-tip{display:none;position:absolute;top:110%;left:50%;transform:translateX(-50%);
+  background:#333;color:#fff;font-size:.72rem;font-weight:400;padding:4px 8px;border-radius:5px;
+  white-space:nowrap;z-index:100;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.coord-sem-col-th:hover .coord-tip{display:block}
+
+/* Columna asignatura — sticky left */
+.coord-asig-row-cell{position:sticky;left:0;z-index:2;background:var(--bg-secondary,#f5f5f5);
+  padding:4px 8px;border-right:2px solid var(--border,#ddd);width:1%;white-space:nowrap;
+  vertical-align:middle}
+.coord-asig-nombre{display:block;font-size:.78rem;font-weight:600;color:var(--text,#111);
+  white-space:nowrap}
+.coord-asig-codigo{font-size:.68rem;color:#888;display:block}
+
+/* Celdas de actividad */
+.coord-cell{cursor:pointer;min-width:38px;width:38px;vertical-align:top;
+  padding:2px 2px;transition:background .12s;text-align:center}
+.coord-cell:hover{background:rgba(25,118,210,.1)}
+.coord-cell-busy{background:rgba(255,152,0,.09)!important}
+.coord-cell-overload{background:rgba(196,50,50,.1)!important}
+
+/* Badges */
+.coord-badge{display:inline-block;color:#fff;font-size:.62rem;font-weight:700;padding:1px 4px;
+  border-radius:3px;margin:1px 0;white-space:nowrap;cursor:default;line-height:1.35}
+
+/* Error */
+.coord-error{padding:20px;color:#c62828;font-size:.9rem}
+
+/* Modal de actividades */
+.coord-modal-sem{color:var(--primary,#1976d2);font-weight:600;margin:0 0 8px;font-size:.87rem}
+.coord-modal-warn{background:#fff3cd;border:1px solid #ffc107;border-radius:5px;padding:6px 10px;font-size:.78rem;color:#856404;margin-bottom:10px}
+.coord-tipo-list{display:flex;flex-direction:column;gap:7px;margin:4px 0}
+.coord-tipo-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 6px;border-radius:5px;transition:background .1s}
+.coord-tipo-row:hover{background:rgba(0,0,0,.04)}
+.coord-tipo-sync{opacity:.7}
+.coord-tipo-sync input[type=checkbox]{cursor:not-allowed}
+.coord-tipo-desc{font-size:.82rem;color:var(--text,#222);flex:1}
+.coord-sync-lbl{font-size:.7rem;color:#888;font-style:italic}
+.coord-notas-inline{flex:1 0 100%;padding:3px 6px;border:1px solid var(--border,#ddd);border-radius:4px;font-size:.78rem;margin-top:2px}
+
+/* ── Modal propio de Coordinación ─────────────────────────────────────────── */
+.coord-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;
+  display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .18s}
+.coord-modal-overlay.open{opacity:1;pointer-events:all}
+.coord-modal-box{background:#fff;border-radius:10px;padding:20px 22px 18px;
+  min-width:310px;max-width:420px;width:92vw;box-shadow:0 8px 32px rgba(0,0,0,.22);
+  max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.coord-modal-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.coord-modal-hdr span{font-weight:700;font-size:.97rem;color:var(--text,#111);line-height:1.3}
+.coord-modal-close{background:none;border:none;font-size:1.1rem;cursor:pointer;
+  color:#888;padding:2px 6px;border-radius:4px;transition:background .12s}
+.coord-modal-close:hover{background:#f0f0f0;color:#333}
+.coord-modal-sem-line{font-size:.8rem;color:var(--primary,#1976d2);font-weight:600;margin-top:-4px}
+
+/* Info de actividades sincronizadas en modal coord */
+.coord-sync-info{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:7px 10px;background:#f0f4ff;border-radius:6px;margin-bottom:6px;font-size:.78rem}
+.coord-sync-info-lbl{color:#555;white-space:nowrap}

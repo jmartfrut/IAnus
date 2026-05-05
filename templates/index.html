@@ -228,6 +228,7 @@
       <!-- VERIFICAR: botón oculto temporalmente; implementación completa conservada en JS/backend. Reactivar añadiendo aquí:
       <button class="tab-btn" onclick="setView('verificar',this)" disabled title="Vista temporalmente desactivada">&#128270; Verificar</button>
       -->
+      <button class="tab-btn" onclick="setView('coord',this)">&#128203; Coordinaci&#243;n</button>
     </div>
   </div>
   <div class="toolbar-group" style="margin-left:auto;gap:8px">
@@ -242,6 +243,7 @@
         <button id="btnExportInstitucional" onclick="exportarInstitucional();closeExportMenu()">&#127970; Exportación UPCT</button>
         <button id="btnExportParcPdf" onclick="exportParcialesPdf();closeExportMenu()">&#128438; PDF Parciales</button>
         <button id="btnExportFinalPdf" onclick="exportFinalesPdf();closeExportMenu()">&#128438; PDF Finales</button>
+        <button id="btnExportCoordAllPdf" onclick="exportCoordAllPDF();closeExportMenu()">&#128203; PDF Coordinaci&#243;n</button>
       </div>
     </div>
   </div>
@@ -298,6 +300,7 @@
       <div id="verifResult" style="display:none"></div>
     </div>
   </div>
+  <div id="view-coord" style="display:none"></div>
   <div id="view-festivos" style="display:none">
     <div class="cal-wrap">
       <div class="cal-top">
@@ -407,6 +410,17 @@
   </div>
 </div>
 
+<div class="coord-modal-overlay" id="coordModalOverlay" onclick="if(event.target===this)closeCoordModal()">
+  <div class="coord-modal-box">
+    <div class="coord-modal-hdr">
+      <span id="coordModalTitle">Actividades</span>
+      <button class="coord-modal-close" onclick="closeCoordModal()">✕</button>
+    </div>
+    <div id="coordModalSem" class="coord-modal-sem-line"></div>
+    <div id="coordModalWarn" class="coord-modal-warn" style="display:none"></div>
+    <div id="coordModalList" class="coord-tipo-list"></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <div class="saving-indicator" id="saving">Guardando en base de datos...</div>
 <div class="pdf-progress" id="pdfOverlay">
@@ -424,6 +438,7 @@ document.addEventListener('click', closeExportMenu);
 // Constantes inyectadas por el servidor desde config.json
 const CURSO_STR           = "{{ CURSO_LABEL }}";
 const DEGREE_ACRONYM      = "{{ DEGREE_ACRONYM }}";
+const DEGREE_NAME         = "{{ DEGREE_NAME }}";
 const INSTITUTION_ACRONYM = "{{ INSTITUTION_ACRONYM }}";
 const EXPORT_PREFIX       = "{{ EXPORT_PREFIX }}";
 const DESTACADAS_BADGE    = "{{ DESTACADAS_BADGE }}";

@@ -312,6 +312,28 @@ def _m18_repair_conjunto_id(conn, **ctx):
         conn.execute("ALTER TABLE clases ADD COLUMN conjunto_id TEXT DEFAULT NULL")
 
 
+
+
+def _m19_coordinacion_actividades(conn, **ctx):
+    """Crea la tabla coordinacion_actividades para el Calendario de Coordinación Horizontal."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS coordinacion_actividades (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo_key      TEXT    NOT NULL,
+            semana_num     INTEGER NOT NULL,
+            asignatura_id  INTEGER NOT NULL
+                               REFERENCES asignaturas(id) ON DELETE CASCADE,
+            tipo_actividad TEXT    NOT NULL,
+            notas          TEXT    DEFAULT '',
+            sincronizado   INTEGER DEFAULT 0,
+            ts             TEXT    DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
+        ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad)
+    """)
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -334,6 +356,7 @@ MIGRATIONS = [
     (16, "Limpia conjunto_id en clases no-EXP/EXF (fix propagación incorrecta)", _m16_clear_conjunto_id_non_exam),
     (17, "Crea grupos_sinc_exclusiones para modo espejo entre grupos",           _m17_grupos_sinc_exclusiones),
     (18, "Repair: garantiza conjunto_id en clases si m15 quedó sin aplicarse",  _m18_repair_conjunto_id),
+    (19, "Crea coordinacion_actividades para Calendario de Coordinación Horizontal",     _m19_coordinacion_actividades),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]
