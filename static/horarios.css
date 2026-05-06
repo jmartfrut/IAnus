@@ -489,6 +489,10 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .coord-filtro-btn{padding:3px 9px;font-size:.75rem;font-weight:600;border:1px solid;border-radius:12px;cursor:pointer;transition:opacity .15s,transform .1s;letter-spacing:.02em}
 .coord-filtro-btn:hover{opacity:.85;transform:scale(1.05)}
 .coord-hint{font-size:.78rem;color:var(--text-light,#888);margin-bottom:8px}
+/* Leyenda inferior del calendario de coordinación */
+.coord-leyenda-footer{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;padding:10px 12px;background:var(--bg-alt,#f8f9fa);border:1px solid var(--border,#e0e0e0);border-radius:6px}
+.coord-ley-entry{display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text,#333)}
+.coord-ley-text{white-space:nowrap}
 
 /* Wrapper con scroll doble */
 .coord-table-wrap{overflow:auto;max-height:calc(100vh - 210px);border:1px solid var(--border,#ddd);border-radius:6px}

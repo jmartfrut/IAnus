@@ -5784,6 +5784,14 @@ function renderCoordinacion() {
         </thead>
         <tbody>${bodyRows}</tbody>
       </table>
+    </div>
+    <div class="coord-leyenda-footer">
+      ${COORD_TIPOS.map(t =>
+        `<span class="coord-ley-entry">
+           <span class="coord-badge" style="background:${t.color}">${t.sync ? '🔒' : ''}${t.codigo}</span>
+           <span class="coord-ley-text">${t.desc}</span>
+         </span>`
+      ).join('')}
     </div>`;
 }
 
