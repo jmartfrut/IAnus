@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.39.4"
+APP_VERSION = "1.40.0"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -458,9 +458,9 @@ def api_update_clase(data):
 
     # Sincronizar coordinacion_actividades si el tipo afecta al calendario de coord.
     tipo_nuevo = data.get("tipo", "")
-    if tipo_nuevo in COORD_SYNC_TIPOS or (
-        conn.execute("SELECT tipo FROM clases WHERE id=?", (clase_id,)).fetchone() or {}
-    ).get("tipo", "") in COORD_SYNC_TIPOS:
+    _tipo_row = conn.execute("SELECT tipo FROM clases WHERE id=?", (clase_id,)).fetchone()
+    tipo_db = _tipo_row["tipo"] if _tipo_row else ""
+    if tipo_nuevo in COORD_SYNC_TIPOS or tipo_db in COORD_SYNC_TIPOS:
         gk_row = conn.execute("""
             SELECT g.clave FROM clases cl
             JOIN semanas s ON cl.semana_id = s.id
@@ -2338,7 +2338,9 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
 
             pdf_bytes = mod.generar_pdf_finales_all(
                 periods_data, CURSO_LABEL,
-                degree_name=DEGREE_NAME, degree_acronym=DEGREE_ACRONYM
+                degree_name=DEGREE_NAME, degree_acronym=DEGREE_ACRONYM,
+                titulo_prefix="Fechas Exámenes Parciales",
+                lat_title_prefix="EXÁMENES PARCIALES"
             )
 
             safe_label  = CURSO_LABEL.replace('-', '_')

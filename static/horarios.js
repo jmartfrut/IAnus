@@ -4471,9 +4471,208 @@ function loadJSZip() {
   return _jszipPromise;
 }
 
+
+// ─── Helper: pregunta modal sobre incluir estadísticas ───────────────────────
+function _askIncludeStats() {
+  return new Promise(resolve => {
+    const modal  = document.getElementById('exportGradoModal');
+    const btnNo  = document.getElementById('exportGradoNoBtn');
+    const btnSi  = document.getElementById('exportGradoSiBtn');
+    modal.style.display = 'flex';
+    function cleanup(val) {
+      modal.style.display = 'none';
+      btnNo.removeEventListener('click', onNo);
+      btnSi.removeEventListener('click', onSi);
+      resolve(val);
+    }
+    function onNo() { cleanup(false); }
+    function onSi() { cleanup(true);  }
+    btnNo.addEventListener('click', onNo);
+    btnSi.addEventListener('click', onSi);
+  });
+}
+
+// ─── Helper: genera el PDF de estadísticas para currentCurso/currentCuat ─────
+// Devuelve ArrayBuffer (para incluir en ZIP). NO muestra overlay ni guarda.
+async function _genStatsPDFBlob(logo) {
+  const prefix    = currentCurso + '_' + currentCuat + '_grupo_';
+  const groupKeys = Object.keys(DB.grupos).filter(k => k.startsWith(prefix)).sort();
+  if (!groupKeys.length) return null;
+
+  const { jsPDF } = window.jspdf;
+
+  const allGroupStats = groupKeys.map(gKey => ({
+    gKey, g: DB.grupos[gKey],
+    asigs: computeGroupStats(DB.grupos[gKey].semanas)
+  }));
+  const globalHasParcial5 = allGroupStats.some(s =>
+    s.asigs.some(a => a.counts.parcial5 > 0 || (a.fichas && a.fichas.af5 > 0)));
+  const globalHasParcial6 = allGroupStats.some(s =>
+    s.asigs.some(a => a.counts.parcial6 > 0 || (a.fichas && a.fichas.af6 > 0)));
+
+  const _ord  = ['','1.º','2.º','3.º','4.º','5.º','6.º'];
+  const _cuat = {'1C':'1.er Cuatrimestre','2C':'2.º Cuatrimestre','A':'Anual'};
+  const cuatLabel  = _cuat[currentCuat]  || currentCuat;
+  const cursoLabel = _ord[parseInt(currentCurso)] || currentCurso + '.º';
+  const degreeTxt  = (typeof DEGREE_NAME !== 'undefined' ? DEGREE_NAME : DEGREE_ACRONYM);
+
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const PW  = pdf.internal.pageSize.getWidth();
+  const PH  = pdf.internal.pageSize.getHeight();
+  const cap = makeCaptureContainer();
+  cap.style.width = '1100px';
+  document.body.appendChild(cap);
+
+  let pagesAdded = 0;
+
+  function _chartHeader(icon, title, subtitle, bg = '#1a3a6b') {
+    return `<div style="background:${bg};color:#fff;padding:10px 16px 8px;border-radius:10px 10px 0 0;font-family:system-ui,-apple-system,sans-serif">
+      <div style="font-size:1rem;font-weight:800;letter-spacing:.03em">${icon} ${title}</div>
+      <div style="font-size:.75rem;opacity:.85;margin-top:3px">${subtitle}</div>
+    </div>`;
+  }
+
+  async function _addPage(groupLabel, sectionTitle, scale = 1.8) {
+    await new Promise(r => setTimeout(r, 120));
+    const canvas = await html2canvas(cap, {
+      scale, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
+    });
+    if (pagesAdded > 0) pdf.addPage('a4', 'l');
+    _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel,
+      groupLabel ? `${groupLabel}  ·  ${sectionTitle}` : sectionTitle);
+    const availW = PW - 16, availH = PH - 20;
+    const ratio  = canvas.width / canvas.height;
+    let iw = availW, ih = availW / ratio;
+    if (ih > availH) { ih = availH; iw = availH * ratio; }
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', (PW - iw) / 2, 16, iw, ih);
+    pagesAdded++;
+  }
+
+  // BLOQUE 1 — Tablas de cumplimiento de fichas
+  for (let i = 0; i < allGroupStats.length; i++) {
+    const { gKey, g, asigs } = allGroupStats[i];
+    if (!asigs || !asigs.length) continue;
+    let totalH = 0, totalParciales = 0;
+    asigs.forEach(a => {
+      const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
+      const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
+      totalH         += (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
+      totalParciales += a.counts.parcial;
+    });
+    const groupLabel = 'Grupo ' + g.grupo;
+    const overrideSet = DB._overrideSet || new Set();
+    let fichasErrCount = 0;
+    asigs.forEach(a => {
+      const f = a.fichas;
+      if (!f || overrideSet.has(a.codigo + '::' + gKey)) return;
+      const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
+      const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
+      const presReal = (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab + a.counts.parcial5) * 2;
+      const presEsp  = f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5;
+      const infoE = Object.entries(a.infoBySubgrupo);
+      const labE  = Object.entries(a.labBySubgrupo);
+      const teorOk = (a.counts.teoria * 2 === f.af1);
+      const af3Ok  = (f.af3||0) === 0 ? a.counts.af3===0 : a.counts.af3*2===(f.af3||0);
+      const infoOk = infoE.length===0 ? f.af4===0 : infoE.every(([,n])=>n*2===f.af4);
+      const labOk  = labE.length===0  ? f.af2===0 : labE.every(([,n])=>n*2===f.af2);
+      if (!teorOk||!af3Ok||!infoOk||!labOk||(presReal!==presEsp)) fichasErrCount++;
+    });
+    const fichasColor = fichasErrCount > 0 ? '#dc2626' : '#16a34a';
+    const fichasTxt   = fichasErrCount > 0 ? `⚠ ${fichasErrCount} no cumplen ficha` : `✓ Todas cumplen`;
+    cap.innerHTML = `<div style="font-family:system-ui,-apple-system,sans-serif;padding:12px 10px 10px">
+      <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:1.05rem;font-weight:700;color:#1a3a6b">${groupLabel}</span>
+        <span style="font-size:.78rem;color:#555">
+          ${g.semanas.length} semanas &nbsp;&middot;&nbsp; ${asigs.length} asignaturas &nbsp;&middot;&nbsp;
+          ${totalH}h lectivas &nbsp;&middot;&nbsp; ${totalParciales} ex. parciales &nbsp;&middot;&nbsp;
+          <strong style="color:${fichasColor}">${fichasTxt}</strong>
+        </span>
+      </div>
+      ${buildActTable(asigs, gKey, { hasParcial5: globalHasParcial5, hasParcial6: globalHasParcial6 })}
+    </div>`;
+    await _addPage(groupLabel, 'Cumplimiento de Fichas');
+  }
+
+  // BLOQUE 2 — Gráficas de prácticas por grupo
+  for (let i = 0; i < allGroupStats.length; i++) {
+    const { g } = allGroupStats[i];
+    const groupLabel = 'Grupo ' + g.grupo;
+    const evol = computeEvolucionData(g.semanas);
+    const codsWithData = Object.keys(evol).filter(cod =>
+      Object.keys(evol[cod].sgLab).length > 0 || Object.keys(evol[cod].sgInfo).length > 0
+    ).sort((a,b) => evol[a].nombre.localeCompare(evol[b].nombre));
+    if (!codsWithData.length) continue;
+    let cardsHtml = '';
+    codsWithData.forEach(cod => {
+      const a = evol[cod];
+      const { svg, series } = buildEvolucionSVG(a.weekNums, a.sgLab, a.sgInfo);
+      const sgKeys = [...new Set(series.map(s => s.sg))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true}));
+      let legendHtml = '';
+      sgKeys.forEach((sg, ci) => {
+        const color = EVOL_COLORS[ci % EVOL_COLORS.length];
+        const lbl = sg==='' ? 'Todos' : 'Sg.'+sg;
+        if (a.sgLab[sg])  legendHtml += `<span class="evol-legend-item"><span class="evol-legend-line" style="background:${color};height:2px"></span>${lbl} LAB</span>`;
+        if (a.sgInfo[sg]) legendHtml += `<span class="evol-legend-item"><span class="evol-legend-line" style="background:${color};background:repeating-linear-gradient(90deg,${color} 0,${color} 5px,transparent 5px,transparent 8px)"></span>${lbl} INFO</span>`;
+      });
+      cardsHtml += `<div class="evol-card"><div class="evol-card-header">${a.nombre}</div><div class="evol-card-body">${svg}</div><div class="evol-legend">${legendHtml}</div></div>`;
+    });
+    const subtitle = `${degreeTxt} · ${cursoLabel} · ${cuatLabel} · ${groupLabel} — sesiones acumuladas semana a semana (LAB: línea continua, INFO: discontinua)`;
+    cap.innerHTML = `<div style="font-family:system-ui,-apple-system,sans-serif">
+      ${_chartHeader('📊','Evolución acumulada de prácticas',subtitle)}
+      <div class="evol-grid" style="border-radius:0 0 10px 10px;border:1px solid #dbe3f0;border-top:none">${cardsHtml}</div>
+    </div>`;
+    await _addPage(groupLabel, 'Evolución de Prácticas', 1.6);
+  }
+
+  // BLOQUE 3 — Comparativa de teoría (solo si 2+ grupos)
+  if (groupKeys.length >= 2) {
+    const TEORIA_COLORS = ['#2d5faa','#e74c3c','#27ae60','#f39c12','#8e44ad','#16a085'];
+    const groupStats = groupKeys.map((gKey, gi) => {
+      const g = DB.grupos[gKey];
+      return { label:'Grupo '+g.grupo, color:TEORIA_COLORS[gi%TEORIA_COLORS.length],
+               byAsig:computeTeoriaAcumuladaPorAsig(g.semanas), weekNums:g.semanas.map(w=>w.numero) };
+    });
+    const allCods = [...new Set(groupStats.flatMap(g=>Object.keys(g.byAsig)))].sort((a,b)=>{
+      const nameA=(groupStats.find(g=>g.byAsig[a])?.byAsig[a]?.nombre)||a;
+      const nameB=(groupStats.find(g=>g.byAsig[b])?.byAsig[b]?.nombre)||b;
+      return nameA.localeCompare(nameB);
+    });
+    if (allCods.length > 0) {
+      let cardsHtml = '';
+      allCods.forEach(cod => {
+        const refGroup = groupStats.find(g=>g.byAsig[cod])||groupStats[0];
+        const weekNums = refGroup.byAsig[cod]?.weekNums||refGroup.weekNums;
+        const nombre   = refGroup.byAsig[cod]?.nombre||cod;
+        const series   = groupStats.map(g=>({label:g.label,color:g.color,vals:g.byAsig[cod]?g.byAsig[cod].horasAcum:new Array(weekNums.length).fill(0)}));
+        const finalVals = series.map(s=>s.vals[s.vals.length-1]);
+        const maxDiff   = Math.max(...finalVals)-Math.min(...finalVals);
+        const badgeHtml = maxDiff===0
+          ? `<span style="background:#dcfce7;color:#166534;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:8px;margin-left:6px">✓ Sincronizados</span>`
+          : `<span style="background:#fef3c7;color:#92400e;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:8px;margin-left:6px">⚠ Dif. ${maxDiff}h</span>`;
+        const svg = buildTeoriaAsigSVG(weekNums,series);
+        const legendHtml = series.map(s=>`<span class="evol-legend-item"><span class="evol-legend-line" style="background:${s.color}"></span>${s.label} <strong>${s.vals[s.vals.length-1]}h</strong></span>`).join('');
+        cardsHtml += `<div class="evol-card"><div class="evol-card-header">${nombre} ${badgeHtml}<span style="color:#94a3b8;font-size:.68rem;margin-left:6px">[${cod}]</span></div><div class="evol-card-body">${svg}</div><div class="evol-legend">${legendHtml}</div></div>`;
+      });
+      const gruposLabel = groupStats.map(g=>g.label).join(', ');
+      const subtitle = `${degreeTxt} · ${cursoLabel} · ${cuatLabel} — ${gruposLabel} — horas acumuladas AF1. ✓ sincronizados · ⚠ diferencia de horas entre grupos`;
+      cap.innerHTML = `<div style="font-family:system-ui,-apple-system,sans-serif">
+        ${_chartHeader('📈','Evolución de Teoría — comparativa entre grupos',subtitle,'#2d5faa')}
+        <div class="evol-grid" style="border-radius:0 0 10px 10px;border:1px solid #dbe3f0;border-top:none">${cardsHtml}</div>
+      </div>`;
+      await _addPage(null, 'Comparativa de Teoría entre Grupos', 1.6);
+    }
+  }
+
+  document.body.removeChild(cap);
+  return pagesAdded > 0 ? pdf.output('arraybuffer') : null;
+}
+
 async function exportAllGradoPDF() {
   const allKeys = Object.keys(DB.grupos || {});
   if (!allKeys.length) { alert('No hay grupos en este grado.'); return; }
+
+  // Preguntar si incluir estadísticas (antes de mostrar el overlay)
+  const includeStats = await _askIncludeStats();
 
   // Guardar estado actual para restaurarlo al terminar
   const savedCurso = currentCurso, savedCuat = currentCuat;
@@ -4503,7 +4702,11 @@ async function exportAllGradoPDF() {
     });
 
     const total = sortedKeys.length;
+    // Registrar pares (curso, cuat) únicos para generar estadísticas después
+    const cuatPairs = [];
+    const cuatSeen  = new Set();
 
+    // ── FASE 1: horarios de cada grupo ──────────────────────────────────────
     for (let gi = 0; gi < total; gi++) {
       const key  = sortedKeys[gi];
       const { curso, cuat, grupo } = parseKey(key);
@@ -4514,9 +4717,10 @@ async function exportAllGradoPDF() {
       const weeks = getWeeks();
       if (!weeks.length) continue;
 
-      const basePct    = Math.round(5 + (gi / total) * 90);
+      const phasePct = includeStats ? 50 : 90;   // reservar la 2ª mitad para stats si procede
+      const basePct  = Math.round(5 + (gi / total) * phasePct);
       const grupoLabel = 'Grupo ' + grupo;
-      setPdfProgress(basePct, `PDF ${gi + 1}/${total}: Curso ${curso} · ${cuat} · ${grupoLabel}`);
+      setPdfProgress(basePct, `Horario ${gi + 1}/${total}: Curso ${curso} · ${cuat} · ${grupoLabel}`);
 
       // Generar PDF de todas las semanas de este grupo
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -4574,6 +4778,25 @@ async function exportAllGradoPDF() {
       // Añadir al ZIP en carpeta por curso
       const grupoFile = 'Grupo' + grupo;
       zip.folder('Curso' + curso).file(`${cuat}_${grupoFile}.pdf`, pdf.output('blob'));
+
+      // Registrar el par (curso, cuat) para la fase de estadísticas
+      const pairKey = `${curso}_${cuat}`;
+      if (!cuatSeen.has(pairKey)) { cuatSeen.add(pairKey); cuatPairs.push({ curso, cuat }); }
+    }
+
+    // ── FASE 2: estadísticas por cuatrimestre (si el usuario lo pidió) ──────
+    if (includeStats && cuatPairs.length) {
+      for (let pi = 0; pi < cuatPairs.length; pi++) {
+        const { curso, cuat } = cuatPairs[pi];
+        const pct = Math.round(58 + (pi / cuatPairs.length) * 36);
+        setPdfProgress(pct, `Estadísticas: Curso ${curso} · ${cuat}…`);
+        currentCurso = curso; currentCuat = cuat;
+        const statsBuffer = await _genStatsPDFBlob(logo);
+        if (statsBuffer) {
+          zip.folder('Curso' + curso).file(`${cuat}_Estadisticas.pdf`,
+            new Uint8Array(statsBuffer));
+        }
+      }
     }
 
     setPdfProgress(97, 'Generando archivo ZIP…');
@@ -6231,3 +6454,285 @@ async function exportCoordAllPDF() {
   }
 }
 // ── Fin exportación PDF Coordinación ─────────────────────────────────────────
+
+// ── Exportación PDF de Estadísticas (tablas + gráficas, una página por bloque) ─
+async function exportStatsPDF() {
+  if (!DB || !DB.grupos) {
+    alert('Los datos del horario no están cargados. Abre cualquier vista primero.');
+    return;
+  }
+  const prefix = currentCurso + '_' + currentCuat + '_grupo_';
+  const groupKeys = Object.keys(DB.grupos).filter(k => k.startsWith(prefix)).sort();
+  if (!groupKeys.length) {
+    alert('No hay datos para el curso y cuatrimestre seleccionados.');
+    return;
+  }
+
+  showPdfOverlay();
+  setPdfProgress(5, 'Cargando librerías…');
+
+  try {
+    const [, logo] = await Promise.all([loadPdfLibs(), _loadLogo()]);
+    const { jsPDF } = window.jspdf;
+
+    // Pre-calcular stats de todos los grupos para flags globales de columnas AF5/AF6
+    const allGroupStats = groupKeys.map(gKey => ({
+      gKey,
+      g: DB.grupos[gKey],
+      asigs: computeGroupStats(DB.grupos[gKey].semanas)
+    }));
+    const globalHasParcial5 = allGroupStats.some(s =>
+      s.asigs.some(a => a.counts.parcial5 > 0 || (a.fichas && a.fichas.af5 > 0))
+    );
+    const globalHasParcial6 = allGroupStats.some(s =>
+      s.asigs.some(a => a.counts.parcial6 > 0 || (a.fichas && a.fichas.af6 > 0))
+    );
+
+    const _ord  = ['','1.º','2.º','3.º','4.º','5.º','6.º'];
+    const _cuat = {'1C':'1.er Cuatrimestre','2C':'2.º Cuatrimestre','A':'Anual'};
+    const cuatLabel  = _cuat[currentCuat]  || currentCuat;
+    const cursoLabel = _ord[parseInt(currentCurso)] || currentCurso + '.º';
+    const degreeTxt  = (typeof DEGREE_NAME !== 'undefined' ? DEGREE_NAME : DEGREE_ACRONYM);
+
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const PW  = pdf.internal.pageSize.getWidth();
+    const PH  = pdf.internal.pageSize.getHeight();
+
+    const cap = makeCaptureContainer();
+    cap.style.width = '1100px';
+    document.body.appendChild(cap);
+
+    // ── Helper: añade cabecera institucional + captura el contenido del cap ────
+    async function _captureAndAddPage(isFirst, groupLabel, sectionTitle, scale = 1.8) {
+      await new Promise(r => setTimeout(r, 120));
+      const canvas = await html2canvas(cap, {
+        scale, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
+      });
+      if (!isFirst) pdf.addPage('a4', 'l');
+      _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel,
+        groupLabel ? `${groupLabel}  ·  ${sectionTitle}` : sectionTitle);
+      const availW = PW - 16, availH = PH - 20;
+      const ratio  = canvas.width / canvas.height;
+      let iw = availW, ih = availW / ratio;
+      if (ih > availH) { ih = availH; iw = availH * ratio; }
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', (PW - iw) / 2, 16, iw, ih);
+    }
+
+    // ── Helper: encabezado de sección de gráficas (visible dentro del cap) ────
+    function _chartSectionHeader(icon, title, subtitle, bgColor = '#1a3a6b') {
+      return `
+        <div style="
+          background:${bgColor};
+          color:#fff;
+          padding:10px 16px 8px;
+          border-radius:10px 10px 0 0;
+          margin-bottom:0;
+          font-family:system-ui,-apple-system,sans-serif;
+        ">
+          <div style="font-size:1rem;font-weight:800;letter-spacing:.03em">${icon} ${title}</div>
+          <div style="font-size:.75rem;opacity:.85;margin-top:3px">${subtitle}</div>
+        </div>`;
+    }
+
+    let pagesAdded = 0;
+    const totalGroups = allGroupStats.length;
+
+    // ════════════════════════════════════════════════════════════════════
+    // BLOQUE 1 por grupo: tabla de cumplimiento de fichas (AF1–AF6)
+    // ════════════════════════════════════════════════════════════════════
+    for (let i = 0; i < allGroupStats.length; i++) {
+      const { gKey, g, asigs } = allGroupStats[i];
+      const pct = Math.round(8 + (i / totalGroups) * 28);
+      setPdfProgress(pct, `Tabla fichas — Grupo ${i+1}/${totalGroups}…`);
+      if (!asigs || !asigs.length) continue;
+
+      let totalH = 0, totalParciales = 0;
+      asigs.forEach(a => {
+        const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
+        const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
+        totalH         += (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab) * 2;
+        totalParciales += a.counts.parcial;
+      });
+      const groupLabel = 'Grupo ' + g.grupo;
+
+      // Badge fichas
+      const overrideSet = DB._overrideSet || new Set();
+      let fichasErrCount = 0;
+      asigs.forEach(a => {
+        const f = a.fichas;
+        if (!f || overrideSet.has(a.codigo + '::' + gKey)) return;
+        const maxInfo = Object.values(a.infoBySubgrupo).length ? Math.max(...Object.values(a.infoBySubgrupo)) : 0;
+        const maxLab  = Object.values(a.labBySubgrupo).length  ? Math.max(...Object.values(a.labBySubgrupo))  : 0;
+        const presReal = (a.counts.teoria + a.counts.af3 + a.counts.ps + maxInfo + maxLab + a.counts.parcial5) * 2;
+        const presEsp  = f.af1 + f.af2 + (f.af3 || 0) + f.af4 + f.af5;
+        const infoE = Object.entries(a.infoBySubgrupo);
+        const labE  = Object.entries(a.labBySubgrupo);
+        const teorOk = (a.counts.teoria * 2 === f.af1);
+        const af3Ok  = (f.af3 || 0) === 0 ? (a.counts.af3 === 0) : (a.counts.af3 * 2 === (f.af3 || 0));
+        const infoOk = infoE.length === 0 ? f.af4 === 0 : infoE.every(([,n]) => n*2 === f.af4);
+        const labOk  = labE.length  === 0 ? f.af2 === 0 : labE.every(([,n]) => n*2 === f.af2);
+        const totOk  = presReal === presEsp;
+        if (!teorOk || !af3Ok || !infoOk || !labOk || !totOk) fichasErrCount++;
+      });
+      const fichasColor = fichasErrCount > 0 ? '#dc2626' : '#16a34a';
+      const fichasTxt   = fichasErrCount > 0
+        ? `⚠ ${fichasErrCount} asig. no cumplen ficha`
+        : `✓ Todas cumplen ficha`;
+
+      cap.innerHTML = `
+        <div style="font-family:system-ui,-apple-system,sans-serif;padding:12px 10px 10px">
+          <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap">
+            <span style="font-size:1.05rem;font-weight:700;color:#1a3a6b">${groupLabel}</span>
+            <span style="font-size:.78rem;color:#555">
+              ${g.semanas.length} semanas &nbsp;&middot;&nbsp;
+              ${asigs.length} asignaturas &nbsp;&middot;&nbsp;
+              ${totalH}h lectivas &nbsp;&middot;&nbsp;
+              ${totalParciales} ex. parciales &nbsp;&middot;&nbsp;
+              <strong style="color:${fichasColor}">${fichasTxt}</strong>
+            </span>
+          </div>
+          ${buildActTable(asigs, gKey, { hasParcial5: globalHasParcial5, hasParcial6: globalHasParcial6 })}
+        </div>`;
+
+      await _captureAndAddPage(pagesAdded === 0, groupLabel, 'Cumplimiento de Fichas');
+      pagesAdded++;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // BLOQUE 2 por grupo: gráficas de evolución acumulada de prácticas
+    // ════════════════════════════════════════════════════════════════════
+    for (let i = 0; i < allGroupStats.length; i++) {
+      const { gKey, g } = allGroupStats[i];
+      const pct = Math.round(38 + (i / totalGroups) * 28);
+      setPdfProgress(pct, `Gráficas prácticas — Grupo ${i+1}/${totalGroups}…`);
+      const groupLabel = 'Grupo ' + g.grupo;
+
+      const evol = computeEvolucionData(g.semanas);
+      const codsWithData = Object.keys(evol).filter(cod => {
+        const a = evol[cod];
+        return Object.keys(a.sgLab).length > 0 || Object.keys(a.sgInfo).length > 0;
+      }).sort((a, b) => evol[a].nombre.localeCompare(evol[b].nombre));
+
+      if (!codsWithData.length) continue;
+
+      // Construir grid de tarjetas de gráficas
+      let cardsHtml = '';
+      codsWithData.forEach(cod => {
+        const a = evol[cod];
+        const { svg, series } = buildEvolucionSVG(a.weekNums, a.sgLab, a.sgInfo);
+        const sgKeys = [...new Set(series.map(s => s.sg))].sort((x,y) => x.localeCompare(y,undefined,{numeric:true}));
+        let legendHtml = '';
+        sgKeys.forEach((sg, ci) => {
+          const color = EVOL_COLORS[ci % EVOL_COLORS.length];
+          const lbl = sg === '' ? 'Todos' : 'Sg.' + sg;
+          if (a.sgLab[sg])  legendHtml += `<span class="evol-legend-item"><span class="evol-legend-line" style="background:${color};height:2px"></span>${lbl} LAB</span>`;
+          if (a.sgInfo[sg]) legendHtml += `<span class="evol-legend-item"><span class="evol-legend-line" style="background:${color};background:repeating-linear-gradient(90deg,${color} 0,${color} 5px,transparent 5px,transparent 8px)"></span>${lbl} INFO</span>`;
+        });
+        cardsHtml += `<div class="evol-card">
+          <div class="evol-card-header">${a.nombre}</div>
+          <div class="evol-card-body">${svg}</div>
+          <div class="evol-legend">${legendHtml}</div>
+        </div>`;
+      });
+
+      const subtitle = `${degreeTxt} · ${cursoLabel} · ${cuatLabel} · ${groupLabel} — sesiones acumuladas semana a semana (LAB: línea continua, INFO: discontinua)`;
+      cap.style.width = '1100px';
+      cap.innerHTML = `
+        <div style="font-family:system-ui,-apple-system,sans-serif">
+          ${_chartSectionHeader('📊', 'Evolución acumulada de prácticas', subtitle)}
+          <div class="evol-grid" style="border-radius:0 0 10px 10px;border:1px solid #dbe3f0;border-top:none">
+            ${cardsHtml}
+          </div>
+        </div>`;
+
+      await _captureAndAddPage(false, groupLabel, 'Evolución de Prácticas', 1.6);
+      pagesAdded++;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // BLOQUE 3: gráficas comparativas de teoría entre grupos
+    // (solo si hay 2 o más grupos)
+    // ════════════════════════════════════════════════════════════════════
+    if (groupKeys.length >= 2) {
+      setPdfProgress(70, 'Gráficas comparativa teoría…');
+
+      const TEORIA_COLORS = ['#2d5faa','#e74c3c','#27ae60','#f39c12','#8e44ad','#16a085'];
+      const groupStats = groupKeys.map((gKey, gi) => {
+        const g = DB.grupos[gKey];
+        return {
+          label:    'Grupo ' + g.grupo,
+          color:    TEORIA_COLORS[gi % TEORIA_COLORS.length],
+          byAsig:   computeTeoriaAcumuladaPorAsig(g.semanas),
+          weekNums: g.semanas.map(w => w.numero)
+        };
+      });
+
+      const allCods = [...new Set(groupStats.flatMap(g => Object.keys(g.byAsig)))].sort((a, b) => {
+        const nameA = (groupStats.find(g => g.byAsig[a])?.byAsig[a]?.nombre) || a;
+        const nameB = (groupStats.find(g => g.byAsig[b])?.byAsig[b]?.nombre) || b;
+        return nameA.localeCompare(nameB);
+      });
+
+      if (allCods.length > 0) {
+        let cardsHtml = '';
+        allCods.forEach(cod => {
+          const refGroup = groupStats.find(g => g.byAsig[cod]) || groupStats[0];
+          const weekNums = refGroup.byAsig[cod]?.weekNums || refGroup.weekNums;
+          const nombre   = refGroup.byAsig[cod]?.nombre || cod;
+          const series   = groupStats.map(g => ({
+            label: g.label,
+            color: g.color,
+            vals:  g.byAsig[cod] ? g.byAsig[cod].horasAcum : new Array(weekNums.length).fill(0)
+          }));
+          const finalVals = series.map(s => s.vals[s.vals.length - 1]);
+          const maxDiff   = Math.max(...finalVals) - Math.min(...finalVals);
+          const badgeHtml = maxDiff === 0
+            ? `<span style="background:#dcfce7;color:#166534;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:8px;margin-left:6px">✓ Sincronizados</span>`
+            : `<span style="background:#fef3c7;color:#92400e;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:8px;margin-left:6px">⚠ Dif. ${maxDiff}h</span>`;
+          const svg = buildTeoriaAsigSVG(weekNums, series);
+          const legendHtml = series.map(s =>
+            `<span class="evol-legend-item"><span class="evol-legend-line" style="background:${s.color}"></span>${s.label} <strong>${s.vals[s.vals.length-1]}h</strong></span>`
+          ).join('');
+          cardsHtml += `<div class="evol-card">
+            <div class="evol-card-header">${nombre} ${badgeHtml}<span style="color:#94a3b8;font-size:.68rem;margin-left:6px">[${cod}]</span></div>
+            <div class="evol-card-body">${svg}</div>
+            <div class="evol-legend">${legendHtml}</div>
+          </div>`;
+        });
+
+        const gruposLabel = groupStats.map(g => g.label).join(', ');
+        const subtitle = `${degreeTxt} · ${cursoLabel} · ${cuatLabel} — ${gruposLabel} — horas acumuladas de teoría (AF1). ✓ = grupos sincronizados, ⚠ = diferencia de horas entre grupos.`;
+        cap.style.width = '1100px';
+        cap.innerHTML = `
+          <div style="font-family:system-ui,-apple-system,sans-serif">
+            ${_chartSectionHeader('📈', 'Evolución de Teoría — comparativa entre grupos', subtitle, '#2d5faa')}
+            <div class="evol-grid" style="border-radius:0 0 10px 10px;border:1px solid #dbe3f0;border-top:none">
+              ${cardsHtml}
+            </div>
+          </div>`;
+
+        await _captureAndAddPage(false, null, 'Comparativa de Teoría entre Grupos', 1.6);
+        pagesAdded++;
+      }
+    }
+
+    document.body.removeChild(cap);
+
+    if (!pagesAdded) {
+      alert('No se encontraron datos de estadísticas para exportar.');
+      return;
+    }
+
+    setPdfProgress(95, 'Guardando PDF…');
+    const cuatTag = currentCuat.toLowerCase();
+    pdf.save(`${EXPORT_PREFIX || DEGREE_ACRONYM}_estadisticas_${currentCurso}c_${cuatTag}.pdf`);
+    setPdfProgress(100, '¡Listo!');
+    setTimeout(hidePdfOverlay, 600);
+
+  } catch(e) {
+    hidePdfOverlay();
+    console.error(e);
+    alert('Error al generar PDF: ' + e.message);
+  }
+}
+// ── Fin exportación PDF Estadísticas ─────────────────────────────────────────

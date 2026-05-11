@@ -244,6 +244,7 @@
         <button id="btnExportParcPdf" onclick="exportParcialesPdf();closeExportMenu()">&#128438; PDF Parciales</button>
         <button id="btnExportFinalPdf" onclick="exportFinalesPdf();closeExportMenu()">&#128438; PDF Finales</button>
         <button id="btnExportCoordAllPdf" onclick="exportCoordAllPDF();closeExportMenu()">&#128203; PDF Coordinaci&#243;n</button>
+        <button id="btnExportStatsPdf" onclick="exportStatsPDF();closeExportMenu()">&#128202; PDF Estad&#237;sticas</button>
       </div>
     </div>
   </div>
@@ -480,6 +481,28 @@ const NUM_CURSOS          = {{ NUM_CURSOS }};
     <pre id="syncDtieLog" style="flex:1;overflow:auto;margin:0;padding:16px 20px;
          font-size:.82rem;line-height:1.55;white-space:pre-wrap;background:#f8fafc;
          border-radius:0 0 12px 12px;color:#1e293b"></pre>
+  </div>
+</div>
+
+<!-- Modal: incluir estadísticas en exportación de todo el grado -->
+<div id="exportGradoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+     z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(440px,92vw);
+              box-shadow:0 8px 32px rgba(0,0,0,.28);overflow:hidden">
+    <div style="background:linear-gradient(135deg,#1a3a6b,#2d5faa);padding:18px 22px">
+      <div style="color:#fff;font-size:1.05rem;font-weight:800;margin-bottom:4px">&#128230; Exportar todo el grado</div>
+      <div style="color:rgba(255,255,255,.78);font-size:.82rem">Selecciona qué deseas incluir en el ZIP</div>
+    </div>
+    <div style="padding:20px 22px">
+      <p style="margin:0 0 18px;font-size:.9rem;color:#334155;line-height:1.55">
+        ¿Deseas incluir también el <strong>PDF de Estadísticas</strong>
+        (tablas de cumplimiento de fichas + gráficas de evolución) por cuatrimestre?
+      </p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="exportGradoNoBtn" class="btn btn-outline">&#128438; Solo horarios</button>
+        <button id="exportGradoSiBtn" class="btn btn-primary">&#128202; S&iacute;, incluir estad&iacute;sticas</button>
+      </div>
+    </div>
   </div>
 </div>
 

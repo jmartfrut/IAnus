@@ -571,7 +571,7 @@ def generar_pdf_finales(exams, periodo_label_plain, curso_label, start_iso, end_
     )
 
 
-def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ingeniería Mecánica", degree_acronym="GIM"):
+def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ingeniería Mecánica", degree_acronym="GIM", titulo_prefix="Fechas Exámenes Finales", lat_title_prefix="EXÁMENES FINALES"):
     """
     periods_data : lista de dicts con claves:
         label  — str, ej. 'Enero - 1er Cuatrimestre'
@@ -604,8 +604,8 @@ def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ing
     landscape_tpl = PageTemplate(id='landscape', frames=[landscape_frame],
                                   pagesize=landscape(A4))
 
-    first_titulo = (f"Fechas Exámenes Finales - {periods_data[0]['label']} "
-                    f"- Curso {curso_label}") if periods_data else "Exámenes Finales"
+    first_titulo = (f"{titulo_prefix} - {periods_data[0]['label']} "
+                    f"- Curso {curso_label}") if periods_data else titulo_prefix
     doc = BaseDocTemplate(
         buf,
         pageTemplates=[portrait_tpl, landscape_tpl],
@@ -625,8 +625,8 @@ def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ing
 
     story = []
     for i, p in enumerate(periods_data):
-        titulo    = f"Fechas Exámenes Finales - {p['label']} - Curso {curso_label}"
-        lat_title = f"EXÁMENES FINALES - {p['label'].upper()} - {degree_acronym} - {curso_label}"
+        titulo    = f"{titulo_prefix} - {p['label']} - Curso {curso_label}"
+        lat_title = f"{lat_title_prefix} - {p['label'].upper()} - {degree_acronym} - {curso_label}"
         exam_idx  = _build_exam_index(p['exams'])
         weeks     = _get_weeks(p['start'], p['end'])
         sd        = _iso_to_date(p['start'])
