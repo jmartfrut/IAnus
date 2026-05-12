@@ -307,11 +307,17 @@ async function shutdownApp() {
   } catch(e) {
     // El servidor se cierra y la petición puede fallar — es esperado
   }
-  document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#1a3a6b;">' +
-    '<div style="font-size:3rem;margin-bottom:1rem;">✓</div>' +
-    '<h2 style="margin:0 0 .5rem;">Aplicación cerrada</h2>' +
-    '<p style="color:#666;margin:0;">Puedes cerrar esta pestaña.</p>' +
-    '</div>';
+  // Intentar cerrar la pestaña automáticamente
+  // Funciona en la mayoría de navegadores para páginas locales
+  try { window.close(); } catch(e) {}
+  // Si window.close() fue bloqueado, mostrar pantalla de cierre
+  setTimeout(() => {
+    document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#1a3a6b;">' +
+      '<div style="font-size:3rem;margin-bottom:1rem;">✓</div>' +
+      '<h2 style="margin:0 0 .5rem;">Aplicación cerrada</h2>' +
+      '<p style="color:#666;margin:0;">Puedes cerrar esta pestaña.</p>' +
+      '</div>';
+  }, 300);
 }
 
 function importDBFileSelected(input) {
