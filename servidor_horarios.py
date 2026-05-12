@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.40.2"
+APP_VERSION = "1.40.3"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -1273,6 +1273,23 @@ def api_db_checkpoint(_data):
     return {"ok": True}
 
 
+
+def api_shutdown(_data):
+    """POST /api/shutdown — checkpoint WAL y cierre limpio del servidor."""
+    import threading
+    # Checkpoint antes de salir para que la BD esté coherente
+    try:
+        conn = get_db()
+        conn.execute("PRAGMA wal_checkpoint(FULL)")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    # shutdown() debe llamarse desde otro hilo (serve_forever bloquea el actual)
+    threading.Thread(target=_http_server.shutdown, daemon=True).start()
+    return {"ok": True}
+
+
 def api_db_import(raw_bytes):
     """POST /api/db/import — sustituye la base de datos activa por el fichero enviado."""
     import shutil, datetime
@@ -1955,6 +1972,7 @@ API_ROUTES = {
     "/api/db/info":                  ("GET",  api_db_info),
     "/api/db/backup":                ("POST", api_db_backup),
     "/api/db/checkpoint":            ("POST", api_db_checkpoint),
+    "/api/shutdown":                 ("POST", api_shutdown),
     "/api/destacada/toggle":         ("POST", api_toggle_destacada),
     "/api/comentario":               ("GET",  api_get_comentario),
     "/api/comentario/set":           ("POST", api_set_comentario),
@@ -2667,7 +2685,9 @@ if __name__ == "__main__":
 
     _setup_win32_backup_handler()
 
-    server = http.server.HTTPServer(("0.0.0.0", PORT), HorarioHandler)
+    global _http_server
+    _http_server = http.server.HTTPServer(("0.0.0.0", PORT), HorarioHandler)
+    server = _http_server
     try:
         server.serve_forever()
     except KeyboardInterrupt:

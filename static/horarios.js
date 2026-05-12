@@ -296,6 +296,24 @@ async function backupDB() {
   }
 }
 
+
+async function shutdownApp() {
+  if (!confirm('¿Cerrar la aplicación?\n\nSe guardará la base de datos y el servidor se detendrá.')) return;
+  const btn = document.getElementById('btnShutdown');
+  btn.disabled = true;
+  btn.innerHTML = '&#9203; Cerrando...';
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+  } catch(e) {
+    // El servidor se cierra y la petición puede fallar — es esperado
+  }
+  document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#1a3a6b;">' +
+    '<div style="font-size:3rem;margin-bottom:1rem;">✓</div>' +
+    '<h2 style="margin:0 0 .5rem;">Aplicación cerrada</h2>' +
+    '<p style="color:#666;margin:0;">Puedes cerrar esta pestaña.</p>' +
+    '</div>';
+}
+
 function importDBFileSelected(input) {
   if (!input.files || !input.files[0]) return;
   const file = input.files[0];
