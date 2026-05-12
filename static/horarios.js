@@ -1449,7 +1449,8 @@ function renderParciales() {
         if (!byWeek[sNum]) byWeek[sNum] = {};
         if (!byWeek[sNum][curso]) byWeek[sNum][curso] = {};
         if (!byWeek[sNum][curso][cls.dia]) byWeek[sNum][curso][cls.dia] = new Map();
-        const key = (cls.asig_nombre || '') + '|||' + cls.tipo + (cls.observacion ? '|' + cls.observacion : '');
+        const turnoKey = cls.franja_orden <= 3 ? 'M' : 'T';
+        const key = (cls.asig_nombre || '') + '|||' + cls.tipo + '|||' + turnoKey + (cls.observacion ? '|' + cls.observacion : '');
         const ex = byWeek[sNum][curso][cls.dia].get(key);
         if (ex) {
           if (!ex.grupos.includes(grupo.grupo)) ex.grupos.push(grupo.grupo);

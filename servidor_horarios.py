@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.40.0"
+APP_VERSION = "1.40.2"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -2286,7 +2286,7 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
                 if not iso:
                     continue
                 turno = 'mañana' if r['franja_orden'] <= 3 else 'tarde'
-                key = (iso, str(r['curso']), r['asig_codigo'], r['tipo'])
+                key = (iso, str(r['curso']), r['asig_codigo'], r['tipo'], turno)
                 if key not in seen:
                     obs = ('Examen final' if r['tipo'] == 'EXF' else 'Examen parcial')
                     if r['observacion']:
