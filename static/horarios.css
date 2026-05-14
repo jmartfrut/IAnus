@@ -236,6 +236,9 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .parc-curso-5{background:#ede9fe;color:#4c1d95}
 .parc-cell{padding:5px 7px!important;vertical-align:middle}
 .parc-empty{background:#fafafa}
+.parc-cell-festivo{background:#fef2f2!important;cursor:default!important;text-align:center;vertical-align:middle!important;border-left:2px solid #fca5a5!important;border-right:2px solid #fca5a5!important}
+.parc-cell-festivo:hover{background:#fef2f2!important}
+.parc-festivo-label{font-size:.70rem;color:#b91c1c;font-weight:600;line-height:1.5}
 .parc-entry{display:flex;flex-direction:column;gap:1px;padding:4px 6px;border-radius:5px;margin:2px 0;text-align:left;border-left:3px solid}
 .parc-entry-1{background:#dbeafe;border-color:#2563eb}
 .parc-entry-2{background:#dcfce7;border-color:#16a34a}

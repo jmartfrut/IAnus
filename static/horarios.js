@@ -14,6 +14,7 @@ let _classroomsAll = [];   // aulas cargadas desde /api/classrooms
 // ── COORDINACIÓN HORIZONTAL ──────────────────────────────────────────────────
 let COORD_DATA    = null;   // respuesta de /api/coordinacion
 let _coordLoaded  = false;  // carga diferida (igual que finales)
+let _festivosLoaded = false; // carga diferida — usado también por renderParciales
 let coordTiposVisible = null; // Set<string> — tipos visibles; null = todos (se inicializa en primer render)
 const COORD_TIPOS = [
   { codigo:'LAB', desc:'Prácticas de laboratorio',      color:'#2e7d32', sync:true  },
@@ -1462,11 +1463,13 @@ function renderParciales() {
   // ── 1. Recopilar parciales
   // byWeek[sNum][curso][dia] = Map{ key -> {nombre, obs, franja, franjaOrden, grupos[]} }
   const byWeek = {};
+  const sNumToDesc = {};  // sNum → descripcion (para calcular fechas ISO)
 
   for (const [clave, grupo] of Object.entries(DB.grupos)) {
     if (grupo.cuatrimestre !== cuat) continue;
     const curso = String(grupo.curso);
     for (const semana of grupo.semanas) {
+      if (!sNumToDesc[semana.numero]) sNumToDesc[semana.numero] = semana.descripcion;
       for (const cls of semana.clases) {
         if (!cls.tipo || !['EXP','EXF'].includes(cls.tipo)) continue;
         const sNum = semana.numero;
@@ -1545,6 +1548,36 @@ function renderParciales() {
     }
   }
 
+  // ── 3b. Helper festivos + mapa combinado ──
+  const PARC_MESES = {ENERO:1,FEBRERO:2,MARZO:3,ABRIL:4,MAYO:5,JUNIO:6,
+                      JULIO:7,AGOSTO:8,SEPTIEMBRE:9,OCTUBRE:10,NOVIEMBRE:11,DICIEMBRE:12};
+  const PARC_DIAS_IDX = {LUNES:0,MARTES:1,'MIÉRCOLES':2,JUEVES:3,VIERNES:4,'SÁBADO':5};
+  function _getParcDiaISO(sNum, diaName) {
+    const desc = sNumToDesc[sNum];
+    if (!desc) return null;
+    const m = desc.match(/(\d+)\s+([A-ZÁÉÍÓÚÑ]+)\s+A\s+(\d+)\s+([A-ZÁÉÍÓÚÑ]+)/i);
+    if (!m) return null;
+    const startDay = parseInt(m[1], 10);
+    const startMonth = PARC_MESES[m[2].toUpperCase()];
+    if (!startMonth) return null;
+    let yA = 2026, yB = 2027;
+    if (typeof CURSO_STR === 'string') {
+      const pts = CURSO_STR.split('-');
+      const a = parseInt(pts[0],10), b = parseInt(pts[1],10);
+      if (!isNaN(a) && !isNaN(b)) { yA = a; yB = b; }
+    }
+    const year = startMonth >= 7 ? yA : yB;
+    const diaIdx = PARC_DIAS_IDX[diaName.toUpperCase()];
+    if (diaIdx === undefined) return null;
+    const d = new Date(year, startMonth - 1, startDay + diaIdx);
+    if (isNaN(d.getTime())) return null;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+  // Mapa combinado de festivos (BD + config.json); ambos pueden estar vacíos
+  const allFestivosMap = Object.assign({}, configFestivosMap || {}, FESTIVOS_MAP || {});
+
   // ── 4. Panel de alertas de conflicto ──
   let html = '';
   if (conflictList.length > 0) {
@@ -1577,6 +1610,7 @@ function renderParciales() {
     <div class="parc-legend">
       ${cursos.map(c => `<div class="parc-legend-item"><span class="parc-legend-dot ${cursoBg[c]}"></span>${cursoLabel[c]} (${countByCurso[c]})</div>`).join('')}
       <div class="parc-legend-item"><span class="parc-legend-dot" style="background:#f59e0b;border-radius:50%"></span>Conflicto turno</div>
+      ${Object.keys(allFestivosMap).length > 0 ? `<div class="parc-legend-item"><span class="parc-legend-dot" style="background:#fef2f2;border:1.5px solid #ef4444;border-radius:3px"></span>Festivo/No lectivo</div>` : ''}
       <div class="parc-legend-item"><span class="parc-turno-tag parc-turno-man">mañana</span> fr. 1–3</div>
       <div class="parc-legend-item"><span class="parc-turno-tag parc-turno-tar">tarde</span> fr. 4–6</div>
     </div>
@@ -1604,6 +1638,18 @@ function renderParciales() {
       html += `<td class="parc-curso-cell ${cursoBg[curso]}">${cursoLabel[curso]}</td>`;
 
       for (const dia of dias) {
+        // ── Día festivo / no lectivo ──
+        const isoDate = _getParcDiaISO(sNum, dia);
+        const festivoInfo = isoDate ? allFestivosMap[isoDate] : null;
+        if (festivoInfo) {
+          hayFestivoEnParciales = true;
+          const [,fm,fd] = (isoDate || '').split('-');
+          const festivoTitle = festivoInfo.descripcion || (festivoInfo.tipo === 'festivo' ? 'Festivo' : 'No lectivo');
+          html += `<td class="parc-cell-festivo" title="${festivoTitle}">
+            <span class="parc-festivo-label">&#128683;<br><small>${parseInt(fd)}/${parseInt(fm)}</small></span>
+          </td>`;
+          continue;
+        }
         const entries = weekData[curso]?.[dia];
         if (!entries || entries.size === 0) {
           html += `<td class="parc-empty"></td>`;
@@ -3238,9 +3284,16 @@ function setView(v, btn) {
   document.getElementById('view-festivos').style.display  = v==='festivos' ?'':'none';
   document.getElementById('view-verificar').style.display = v==='verificar'?'':'none';
   document.getElementById('view-coord').style.display     = v==='coord'    ?'':'none';
-  if (v==='festivos')  { loadFestivos();     return; }
+  if (v==='festivos')  { _festivosLoaded = true; loadFestivos(); return; }
   if (v==='finales')   { loadFinales();      return; }
   if (v==='verificar') { return; }
+  if (v==='parciales' && !_festivosLoaded) {
+    _festivosLoaded = true;
+    loadFestivos()
+      .then(() => { if (currentView === 'parciales') render(); })
+      .catch(() => { if (currentView === 'parciales') render(); });
+    return;
+  }
   if (v==='coord') {
     if (!_coordLoaded) { _coordLoaded = true; loadCoordinacion(); }
     else               { syncCoordinacion().then(() => renderCoordinacion()); }
