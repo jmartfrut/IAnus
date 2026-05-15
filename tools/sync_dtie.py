@@ -695,6 +695,150 @@ def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=Fals
     log(f"Exámenes totales: {total_borrados} borrados, {total_copiados} copiados", 'ok')
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sincronización de días no lectivos
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_dtie_date_map(dtie_conn, curso_label):
+    """Construye el mapa { 'YYYY-MM-DD': [(semana_id, dia), ...] } para todos los grupos
+    del DTIE, a partir de las descripciones de semanas.
+
+    Replica la lógica de _parse_semana_date_ranges() del servidor pero devuelve
+    todos los semana_id que corresponden a cada fecha (puede haber varios, uno
+    por grupo, ya que 1C y 2C comparten numeración de semana).
+    """
+    import re
+    from datetime import date, timedelta
+
+    MESES = {
+        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4,
+        'MAYO': 5, 'JUNIO': 6, 'JULIO': 7, 'AGOSTO': 8,
+        'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
+    }
+    DIAS_SEMANA = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES']
+
+    try:
+        parts      = curso_label.split('-')
+        year_start = int(parts[0])
+        year_end   = int(parts[1])
+    except Exception:
+        year_start, year_end = 2026, 2027
+
+    rows = dtie_conn.execute("""
+        SELECT s.id, s.numero, s.descripcion, g.cuatrimestre
+        FROM semanas s
+        JOIN grupos g ON s.grupo_id = g.id
+    """).fetchall()
+
+    date_map = {}  # fecha_iso → [(semana_id, dia), ...]
+    for sid, numero, desc, cuat in rows:
+        m = re.search(
+            r'(\d+)\s+([A-ZÁÉÍÓÚÑ]+)\s+A\s+(\d+)\s+([A-ZÁÉÍÓÚÑ]+)',
+            (desc or '').upper()
+        )
+        if not m:
+            continue
+        start_day   = int(m.group(1))
+        start_month = MESES.get(m.group(2))
+        if not start_month:
+            continue
+        year = year_end if start_month < 7 else year_start
+        try:
+            start = date(year, start_month, start_day)
+        except Exception:
+            continue
+        for i, dia in enumerate(DIAS_SEMANA):
+            d = start + timedelta(days=i)
+            iso = d.isoformat()
+            date_map.setdefault(iso, []).append((sid, dia))
+
+    return date_map
+
+
+def sync_no_lectivos(dtie_conn, cfg, dry_run=False):
+    """Garantiza que cada día marcado en festivos_calendario del DTIE tiene su
+    placeholder es_no_lectivo=1 en la tabla clases.
+
+    Problema que resuelve: sync_clases() copia clases por asignatura_id y nunca
+    recoge los placeholders (asignatura_id=NULL) del grado origen. El resultado es
+    que festivos_calendario tiene las fechas correctas pero clases no tiene ninguna
+    fila con es_no_lectivo=1, por lo que el frontend no marca los días como no
+    lectivos en la vista Semana.
+
+    Esta función replica la mitad "value=1" de _set_no_lectivo_clases() del servidor
+    directamente sobre la BD DTIE, usando festivos_calendario como fuente de verdad.
+    """
+    log("── Sincronizando días no lectivos ──────────────────────────")
+
+    if not table_exists(dtie_conn, 'festivos_calendario'):
+        log("festivos_calendario no existe en el DTIE, se omite", 'warn')
+        return
+
+    festivos = dtie_conn.execute(
+        "SELECT fecha, tipo, descripcion FROM festivos_calendario"
+    ).fetchall()
+
+    # Filtrar: solo los días que deben bloquearse (no los lectivo_override)
+    dias_bloquear = [
+        (fecha, descripcion or 'NO LECTIVO')
+        for fecha, tipo, descripcion in festivos
+        if tipo != 'lectivo_override'
+    ]
+
+    if not dias_bloquear:
+        log("Sin días no lectivos en festivos_calendario, nada que hacer", 'info')
+        return
+
+    curso_label = (cfg.get('server') or {}).get('curso_label', '2026-2027')
+    date_map    = _build_dtie_date_map(dtie_conn, curso_label)
+
+    # Primera franja del DTIE (para el placeholder)
+    primera_franja = dtie_conn.execute(
+        "SELECT id FROM franjas ORDER BY orden LIMIT 1"
+    ).fetchone()
+    franja_id = primera_franja[0] if primera_franja else 1
+
+    total_procesados = 0
+    total_sin_slot   = 0
+
+    for fecha, descripcion in dias_bloquear:
+        slots = date_map.get(fecha)
+        if not slots:
+            total_sin_slot += 1
+            continue  # fecha fuera del calendario lectivo del DTIE
+
+        if not dry_run:
+            for semana_id, dia in slots:
+                # Eliminar clases existentes (reales o placeholders anteriores)
+                dtie_conn.execute(
+                    "DELETE FROM clases WHERE semana_id=? AND dia=?",
+                    (semana_id, dia)
+                )
+                # Insertar placeholder no-lectivo limpio
+                dtie_conn.execute(
+                    """INSERT INTO clases
+                           (semana_id, dia, franja_id, asignatura_id, aula, subgrupo,
+                            observacion, es_no_lectivo, contenido)
+                       VALUES (?, ?, ?, NULL, '', '', NULL, 1, ?)""",
+                    (semana_id, dia, franja_id, descripcion)
+                )
+        total_procesados += 1
+
+    if not dry_run:
+        dtie_conn.commit()
+
+    log(
+        f"{total_procesados} día(s) no lectivo(s) aplicados"
+        + (f" ({total_sin_slot} fuera del calendario)" if total_sin_slot else ""),
+        'ok' if not dry_run else 'info'
+    )
+    if dry_run and total_procesados:
+        log(f"  [dry-run] Se insertarían placeholders para: "
+            + ", ".join(f for f, _ in dias_bloquear if f in date_map),
+            'info')
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Punto de entrada
 # ─────────────────────────────────────────────────────────────────────────────
@@ -837,6 +981,8 @@ def main():
         sync_examenes_finales(
             csv_rows, src_conns_by_siglas, dtie_conn, dry_run=args.dry_run
         )
+        print()
+        sync_no_lectivos(dtie_conn, cfg, dry_run=args.dry_run)
     except Exception as exc:
         print(f"\n❌ Error durante la sincronización: {exc}")
         raise
