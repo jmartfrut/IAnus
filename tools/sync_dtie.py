@@ -237,20 +237,23 @@ def build_franja_map(src_conn, dtie_conn):
 # Localización del grupo fuente
 # ─────────────────────────────────────────────────────────────────────────────
 
-def find_source_grupo_id(src_conn, src_asig_id, grupo_origen):
+def find_source_grupo_id(src_conn, src_asig_id, grupo_origen, cuatrimestre_hint=None):
     """
     Encuentra el grupo_id en la BD fuente adecuado para copiar la asignatura.
 
     Estrategia:
       1. Si grupo_origen está especificado, busca el grupo cuya clave termine
          en '_grupo_{grupo_origen}' (formato estándar: '1_1C_grupo_1').
+         Si hay varios candidatos con el mismo sufijo (p.ej. asignaturas anuales
+         con grupos 1C y 2C), prefiere el que coincida en cuatrimestre con
+         cuatrimestre_hint (el cuatrimestre destino en el DTIE).
       2. Si no hay coincidencia o grupo_origen está vacío, usa el grupo
          con más clases de esa asignatura (mismo criterio que nuevo_dtie.py).
 
     Devuelve el grupo_id o None si no hay clases.
     """
     candidates = src_conn.execute("""
-        SELECT g.id, g.clave, COUNT(*) AS cnt
+        SELECT g.id, g.clave, g.cuatrimestre, COUNT(*) AS cnt
         FROM clases c
         JOIN semanas s ON s.id = c.semana_id
         JOIN grupos g ON g.id = s.grupo_id
@@ -266,11 +269,22 @@ def find_source_grupo_id(src_conn, src_asig_id, grupo_origen):
         suffix = f'_grupo_{grupo_origen}'
         filtered = [r for r in candidates if r[1] and r[1].endswith(suffix)]
         if filtered:
+            # Si hay varios candidatos con ese sufijo y tenemos pista de cuatrimestre,
+            # preferir el grupo cuyo cuatrimestre coincida (evita mezclar 1C y 2C en
+            # asignaturas anuales divididas en dos filas del CSV).
+            if cuatrimestre_hint and len(filtered) > 1:
+                cuat_match = [r for r in filtered if r[2] == cuatrimestre_hint]
+                if cuat_match:
+                    return cuat_match[0][0]
             return filtered[0][0]
         # Segundo intento: último segmento de la clave coincide con grupo_origen
         filtered = [r for r in candidates
                     if r[1] and r[1].split('_')[-1] == str(grupo_origen)]
         if filtered:
+            if cuatrimestre_hint and len(filtered) > 1:
+                cuat_match = [r for r in filtered if r[2] == cuatrimestre_hint]
+                if cuat_match:
+                    return cuat_match[0][0]
             return filtered[0][0]
         # Solo avisa si hay más de un grupo disponible; con uno solo el fallback es trivial
         if len(candidates) > 1:
@@ -410,7 +424,7 @@ def sync_clases(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=False):
         src_asig_id = src_asig[0]
 
         # Grupo fuente
-        src_grupo_id = find_source_grupo_id(src_conn, src_asig_id, grupo_origen)
+        src_grupo_id = find_source_grupo_id(src_conn, src_asig_id, grupo_origen, cuatrimestre_hint=cuatrimestre)
         if src_grupo_id is None:
             log(f"{codigo}: sin clases en {grado_origen}, se omite", 'warn')
             continue
