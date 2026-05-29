@@ -334,6 +334,48 @@ def _m19_coordinacion_actividades(conn, **ctx):
         ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad)
     """)
 
+
+def _m20_coord_dia(conn, **ctx):
+    """Añade columna 'dia' a coordinacion_actividades para precisión de día dentro de la semana.
+    Recrea el índice único incluyendo dia (COALESCE para tratar NULL como cadena vacía).
+    Los datos existentes quedan con dia=NULL (compatibles: se muestran sin día específico).
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(coordinacion_actividades)").fetchall()]
+    if "dia" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dia TEXT DEFAULT NULL")
+    conn.execute("DROP INDEX IF EXISTS idx_coord_unique")
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
+        ON coordinacion_actividades(
+            grupo_key, semana_num, asignatura_id, tipo_actividad,
+            COALESCE(dia, '')
+        )
+    """)
+
+
+def _m21_coord_dedicacion(conn, **ctx):
+    """Añade columna dedicacion REAL a coordinacion_actividades.
+    Valores predefinidos: LAB/INF=0.1, EXP=0.6; manuales=NULL hasta que el usuario los edite."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(coordinacion_actividades)").fetchall()]
+    if "dedicacion" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dedicacion REAL DEFAULT NULL")
+    # Rellenar valores automáticos para entradas ya sincronizadas
+    conn.execute("UPDATE coordinacion_actividades SET dedicacion=0.1 WHERE tipo_actividad IN ('LAB','INF') AND sincronizado=1 AND dedicacion IS NULL")
+    conn.execute("UPDATE coordinacion_actividades SET dedicacion=0.6 WHERE tipo_actividad='EXP' AND sincronizado=1 AND dedicacion IS NULL")
+
+
+def _m22_coord_pesos(conn, **ctx):
+    """Crea tabla coord_pesos con los pesos por defecto de los niveles de dedicación."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS coord_pesos (
+            nivel TEXT PRIMARY KEY,
+            valor REAL NOT NULL
+        )
+    """)
+    defaults = [('baja', 0.1), ('media', 0.4), ('alta', 0.6), ('muy_alta', 0.9)]
+    for nivel, valor in defaults:
+        conn.execute("INSERT OR IGNORE INTO coord_pesos (nivel, valor) VALUES (?, ?)", (nivel, valor))
+
 # ─── REGISTRO DE MIGRACIONES ─────────────────────────────────────────────────
 # NUNCA modificar entradas ya publicadas. Solo añadir nuevas al final.
 
@@ -357,6 +399,9 @@ MIGRATIONS = [
     (17, "Crea grupos_sinc_exclusiones para modo espejo entre grupos",           _m17_grupos_sinc_exclusiones),
     (18, "Repair: garantiza conjunto_id en clases si m15 quedó sin aplicarse",  _m18_repair_conjunto_id),
     (19, "Crea coordinacion_actividades para Calendario de Coordinación Horizontal",     _m19_coordinacion_actividades),
+    (20, "Añade columna 'dia' a coordinacion_actividades (precisión de día dentro de semana)", _m20_coord_dia),
+    (21, "Añade columna 'dedicacion' a coordinacion_actividades (nivel de carga: 0.1/0.4/0.6/0.9)", _m21_coord_dedicacion),
+    (22, "Crea tabla coord_pesos con pesos de dedicación configurables", _m22_coord_pesos),
 ]
 
 LATEST_VERSION = MIGRATIONS[-1][0]

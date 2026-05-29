@@ -423,6 +423,23 @@
     <div id="coordModalList" class="coord-tipo-list"></div>
   </div>
 </div>
+<!-- Modal evolución de carga por asignatura -->
+<div class="coord-modal-overlay" id="cargaModalOverlay" onclick="if(event.target===this)closeCargaModal()">
+  <div class="coord-modal-box" style="max-width:900px;width:92vw">
+    <div class="coord-modal-hdr">
+      <span id="cargaModalAsig">Evolución de carga</span>
+      <button class="coord-modal-close" onclick="closeCargaModal()">✕</button>
+    </div>
+    <div id="cargaModalTotal" style="font-size:.8rem;color:#666;padding:4px 0 8px"></div>
+    <div id="cargaModalChart" style="overflow-x:auto;padding-bottom:4px"></div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;font-size:.75rem">
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#86efac;border-radius:2px;display:inline-block"></span>Baja (≤0.3)</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#fbbf24;border-radius:2px;display:inline-block"></span>Media (0.4–0.7)</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#f97316;border-radius:2px;display:inline-block"></span>Alta (0.8–1.4)</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#ef4444;border-radius:2px;display:inline-block"></span>Muy alta (≥1.5)</span>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <div class="saving-indicator" id="saving">Guardando en base de datos...</div>
 <div class="pdf-progress" id="pdfOverlay">

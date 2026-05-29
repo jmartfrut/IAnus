@@ -505,17 +505,27 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .coord-table th,.coord-table td{border:1px solid var(--border,#ddd);padding:4px 5px;vertical-align:top}
 
 /* Cabecera fila semanas — sticky top */
-.coord-table thead th{position:sticky;top:0;z-index:3;background:var(--bg-secondary,#f5f5f5);
+/* Fila 1: nombre de semana (colspan 5) */
+.coord-table thead tr:first-child th{position:sticky;top:0;z-index:3;background:var(--bg-secondary,#f5f5f5);
   text-align:center;white-space:nowrap;line-height:1.2;font-size:.75rem}
+/* Fila 2: días L M X J V — sticky bajo fila 1 */
+.coord-table thead tr:nth-child(2) th{position:sticky;top:24px;z-index:3;background:var(--bg-secondary,#f5f5f5)}
 .coord-asig-header-th{position:sticky;top:0;left:0;z-index:4;background:var(--bg-secondary,#f5f5f5);
   text-align:left;padding:5px 8px;width:1%;white-space:nowrap;border-right:2px solid var(--border,#ddd)}
-.coord-sem-col-th{min-width:38px;width:38px;padding:4px 2px;font-weight:700;
-  color:var(--primary,#1976d2);font-size:.73rem;cursor:help;position:relative}
-/* Tooltip de semana */
-.coord-sem-col-th .coord-tip{display:none;position:absolute;top:110%;left:50%;transform:translateX(-50%);
+/* Cabecera agrupadora de semana (colspan=5) */
+.coord-sem-group-th{padding:4px 2px;font-weight:700;
+  color:var(--primary,#1976d2);font-size:.73rem;cursor:help;position:relative;
+  border-right:2px solid var(--border,#bbb)!important}
+.coord-sem-group-th .coord-tip{display:none;position:absolute;top:110%;left:50%;transform:translateX(-50%);
   background:#333;color:#fff;font-size:.72rem;font-weight:400;padding:4px 8px;border-radius:5px;
   white-space:nowrap;z-index:100;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.25)}
-.coord-sem-col-th:hover .coord-tip{display:block}
+.coord-sem-group-th:hover .coord-tip{display:block}
+/* Columnas de días */
+.coord-dia-col-th{min-width:20px;width:20px;padding:3px 1px;font-weight:700;
+  font-size:.65rem;text-align:center;color:#555}
+.coord-dia-col-th:last-of-type,.coord-day-cell:last-of-type{border-right:2px solid var(--border,#bbb)!important}
+.coord-sem-rango{display:block;font-size:.6rem;font-weight:400;color:#444;white-space:nowrap}
+
 
 /* Columna asignatura — sticky left */
 .coord-asig-row-cell{position:sticky;left:0;z-index:2;background:var(--bg-secondary,#f5f5f5);
@@ -526,11 +536,13 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .coord-asig-codigo{font-size:.68rem;color:#888;display:block}
 
 /* Celdas de actividad */
-.coord-cell{cursor:pointer;min-width:38px;width:38px;vertical-align:top;
-  padding:2px 2px;transition:background .12s;text-align:center}
+.coord-cell{cursor:pointer;vertical-align:top;
+  padding:2px 1px;transition:background .12s;text-align:center}
+.coord-day-cell{min-width:16px;width:16px}
 .coord-cell:hover{background:rgba(25,118,210,.1)}
 .coord-cell-busy{background:rgba(255,152,0,.09)!important}
 .coord-cell-overload{background:rgba(196,50,50,.1)!important}
+.coord-cell-nolectivo{background:#d1d5db!important;cursor:default!important;pointer-events:none}
 
 /* Badges */
 .coord-badge{display:inline-block;color:#fff;font-size:.62rem;font-weight:700;padding:1px 4px;
@@ -569,3 +581,55 @@ select:focus,input:focus{border-color:var(--primary-light)}
 .coord-sync-info{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
   padding:7px 10px;background:#f0f4ff;border-radius:6px;margin-bottom:6px;font-size:.78rem}
 .coord-sync-info-lbl{color:#555;white-space:nowrap}
+
+/* Dedicación — dot junto al badge */
+.coord-badge-wrap{display:inline-flex;flex-direction:column;align-items:center;margin:1px 0}
+.coord-ded-dot{display:block;font-size:.5rem;font-weight:800;color:#fff;border-radius:2px;
+  padding:0 2px;line-height:1.4;margin-top:1px;text-align:center}
+
+/* Selector de dedicación en el modal */
+.coord-ded-selector{display:inline-flex;gap:3px;margin-left:6px;align-items:center}
+.coord-ded-btn{border:none;border-radius:3px;font-size:.62rem;font-weight:700;
+  padding:2px 5px;cursor:pointer;transition:opacity .15s}
+.coord-ded-btn:hover{opacity:.8}
+.coord-ded-btn.active{box-shadow:0 0 0 2px #374151}
+
+/* Columna de carga / sparkline */
+
+
+/* ── Sección de gráficos de carga bajo la tabla de coordinación ────────────── */
+.coord-carga-section{margin-top:20px;padding:14px 0 4px}
+.coord-carga-section-title{font-size:.82rem;font-weight:700;color:var(--text,#111);
+  margin-bottom:10px}
+.coord-carga-section-title small{font-weight:400;color:#888;margin-left:6px}
+.coord-carga-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.coord-carga-card{background:var(--card,#fff);border:1px solid var(--border,#ddd);
+  border-radius:7px;padding:8px 10px;cursor:pointer;transition:box-shadow .15s}
+.coord-carga-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.coord-carga-card-hdr{display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:5px;gap:6px}
+.coord-carga-card-nombre{font-size:.73rem;font-weight:600;color:var(--text,#111);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80%}
+.coord-carga-card-total{font-size:.7rem;color:#888;white-space:nowrap}
+.coord-carga-leyenda{display:flex;gap:14px;margin-top:10px;font-size:.72rem;color:#666;
+  flex-wrap:wrap}
+.coord-carga-dot{display:inline-block;width:10px;height:10px;border-radius:2px;
+  margin-right:4px;vertical-align:middle}
+
+/* ── Panel de configuración de pesos de dedicación ─────────────────────────── */
+.coord-pesos-panel{background:var(--card,#fff);border:1px solid var(--border,#ddd);
+  border-radius:8px;padding:12px 16px;margin-bottom:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.coord-pesos-grid{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.coord-peso-row{display:flex;align-items:center;gap:6px;background:#f9fafb;
+  border:1px solid #e5e7eb;border-radius:6px;padding:5px 10px}
+.coord-peso-label{font-size:.78rem;color:#444;min-width:55px}
+.coord-peso-input{width:58px;font-size:.8rem;padding:3px 6px;border:1px solid #d1d5db;
+  border-radius:4px;text-align:right}
+.coord-pesos-footer{display:flex;align-items:center;gap:8px;margin-top:8px}
+.coord-pesos-footer small{flex:1;font-size:.72rem;color:#888}
+
+/* Gráfico global de carga diaria */
+.coord-carga-global{background:var(--card,#fff);border:1px solid var(--border,#ddd);
+  border-radius:8px;padding:12px 14px;margin-bottom:16px}
+.coord-carga-global-title{font-size:.8rem;font-weight:700;color:var(--text,#111);margin-bottom:8px}

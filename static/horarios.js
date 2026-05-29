@@ -27,6 +27,24 @@ const COORD_TIPOS = [
   { codigo:'OA',  desc:'Otra actividad evaluable',       color:'#37474f', sync:false },
 ];
 const COORD_WARN_THRESHOLD     = 2;   // naranja
+
+// Etiquetas cortas para los badges de la tabla de coordinación (ahorra espacio)
+const COORD_LBL = { INF:'I', LAB:'L', EXP:'E', SEM:'S', TE:'T', EXF:'EXF', EO:'EO', OA:'OA' };
+
+// Niveles de dedicación: valor numérico → {lbl, color}
+// Los valores (val) se actualizan desde la BD vía loadCoordinacion()
+let COORD_DEDICACION = [
+  { val: 0.1, lbl: 'B',  label: 'Baja',     color: '#86efac', nivel: 'baja' },
+  { val: 0.4, lbl: 'M',  label: 'Media',     color: '#fbbf24', nivel: 'media' },
+  { val: 0.6, lbl: 'A',  label: 'Alta',      color: '#f97316', nivel: 'alta' },
+  { val: 0.9, lbl: 'MA', label: 'Muy alta',  color: '#ef4444', nivel: 'muy_alta' },
+];
+function _applyCoordPesos(pesos) {
+  if (!pesos) return;
+  COORD_DEDICACION = COORD_DEDICACION.map(d => ({
+    ...d, val: pesos[d.nivel] !== undefined ? pesos[d.nivel] : d.val
+  }));
+}
 const COORD_OVERLOAD_THRESHOLD = 4;   // rojo
 const DAYS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
 // Mapa día → clase CSS. Escalable: añadir aquí si se soportan más días especiales.
@@ -4615,7 +4633,7 @@ async function _genStatsPDFBlob(logo) {
     const canvas = await html2canvas(cap, {
       scale, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
     });
-    if (pagesAdded > 0) pdf.addPage('a4', 'l');
+    if (pagesAdded > 0) pdf.addPage('a3', 'l');
     _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel,
       groupLabel ? `${groupLabel}  ·  ${sectionTitle}` : sectionTitle);
     const availW = PW - 16, availH = PH - 20;
@@ -5950,6 +5968,13 @@ function _escHtml(str) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function loadCoordinacion() {
+  // Cargar pesos configurados antes de renderizar
+  try {
+    const rp = await fetch('/api/coord/pesos');
+    const dp = await rp.json();
+    if (dp.ok) _applyCoordPesos(dp.pesos);
+  } catch(_) {}
+
   const params = new URLSearchParams({
     curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
   });
@@ -5988,6 +6013,145 @@ function toggleCoordTipo(codigo) {
   renderCoordinacion();
 }
 
+// Formatea "D/M" → "D-Mon" (ej. "27/9" → "27-Sep") para cabeceras de coordinación
+function _fmtDiaMes(dm) {
+  if (!dm) return '';
+  const MON = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const [d, m] = dm.split('/').map(Number);
+  return `${d}-${MON[m-1] || m}`;
+}
+
+// Extrae rango "D-D Mon" o "D Mon-D Mon" de sem.descripcion ("SEMANA N: D MES A D MES")
+function _fmtSemRango(descripcion) {
+  if (!descripcion) return '';
+  const MESES = {
+    'ENERO':'Ene','FEBRERO':'Feb','MARZO':'Mar','ABRIL':'Abr','MAYO':'May','JUNIO':'Jun',
+    'JULIO':'Jul','AGOSTO':'Ago','SEPTIEMBRE':'Sep','OCTUBRE':'Oct','NOVIEMBRE':'Nov','DICIEMBRE':'Dic'
+  };
+  const m = descripcion.match(/(\d+)\s+([A-ZÁÉÍÓÚÑ]+)\s+A\s+(\d+)\s+([A-ZÁÉÍÓÚÑ]+)/i);
+  if (!m) return '';
+  const [, d1, mes1, d2, mes2] = m;
+  const m1 = MESES[mes1.toUpperCase()] || mes1;
+  const m2 = MESES[mes2.toUpperCase()] || mes2;
+  return m1 === m2 ? `${d1}-${d2} ${m1}` : `${d1} ${m1}-${d2} ${m2}`;
+}
+
+
+// Genera un SVG sparkline de carga semanal para una asignatura
+// loads: array de números (total dedicación por semana)
+
+// Abre modal de detalle de carga para una asignatura
+function openCargaModal(asigId, asigNombre) {
+  if (!COORD_DATA) return;
+  const { semanas, actividades } = COORD_DATA;
+  const visibles = coordTiposVisible || new Set(COORD_TIPOS.map(t => t.codigo));
+  const acts = actividades.filter(a => a.asignatura_id === asigId && visibles.has(a.tipo_actividad));
+
+  // Puntos diarios
+  const puntos = [];
+  for (const sem of semanas) {
+    for (const d of COORD_DIAS) {
+      let total = 0;
+      for (const a of acts) {
+        if (!a.dedicacion) continue;
+        const match = a.dia ? a.dia === d.key : true;
+        if (a.semana_num === sem.numero && match) total += a.dedicacion;
+      }
+      puntos.push({ semNum: sem.numero, diaLbl: d.lbl,
+                    total: Math.round(total * 100) / 100,
+                    desc: sem.descripcion });
+    }
+  }
+
+  const totalDed = acts.reduce((s, a) => s + (a.dedicacion || 0), 0);
+  const maxVal = Math.max(...puntos.map(p => p.total), 0.01);
+  const n = puntos.length;
+
+  // Dimensiones — más grandes para el modal
+  const PAD_L = 36, PAD_R = 12, PAD_T = 14, PAD_B = 36;
+  const PT_W = 14;
+  const CHART_H = 130;
+  const CHART_W = n * PT_W;
+  const SVG_W = PAD_L + CHART_W + PAD_R;
+  const SVG_H = PAD_T + CHART_H + PAD_B;
+  const scaleY = v => PAD_T + CHART_H - Math.round((v / maxVal) * CHART_H);
+
+  const pts = puntos.map((p, i) => ({
+    x: PAD_L + i * PT_W + PT_W / 2, y: scaleY(p.total), ...p
+  }));
+
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+  const area = `${pts[0].x},${PAD_T+CHART_H} ` + polyline +
+               ` ${pts[pts.length-1].x},${PAD_T+CHART_H}`;
+
+  let guides = '', xLabels = '';
+  semanas.forEach((sem, si) => {
+    const x = PAD_L + si * COORD_DIAS.length * PT_W;
+    if (si > 0) guides += `<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+CHART_H}"
+      stroke="#e5e7eb" stroke-width="1" stroke-dasharray="3,3"/>`;
+    const lx = x + (COORD_DIAS.length * PT_W) / 2;
+    xLabels += `<text x="${lx}" y="${SVG_H-18}" text-anchor="middle"
+      font-size="8" font-weight="600" fill="#555">S${sem.numero}</text>`;
+    xLabels += `<text x="${lx}" y="${SVG_H-6}" text-anchor="middle"
+      font-size="7" fill="#aaa">${_fmtSemRango(sem.descripcion)}</text>`;
+  });
+
+  // Etiquetas de día en eje X
+  const diaLabels = pts.map(p =>
+    `<text x="${p.x}" y="${PAD_T+CHART_H+10}" text-anchor="middle"
+      font-size="7" fill="#bbb">${p.diaLbl}</text>`
+  ).join('');
+
+  // Eje Y
+  let yAxis = '';
+  [0.25, 0.5, 0.75, 1.0].forEach(frac => {
+    const v = Math.round(maxVal * frac * 100) / 100;
+    const y = scaleY(maxVal * frac);
+    yAxis += `<line x1="${PAD_L}" y1="${y}" x2="${PAD_L+CHART_W}" y2="${y}"
+      stroke="#f3f4f6" stroke-width="1"/>`;
+    yAxis += `<text x="${PAD_L-4}" y="${y+3}" text-anchor="end" font-size="7" fill="#aaa">${v}</text>`;
+  });
+
+  const dots = pts.map(p =>
+    `<circle cx="${p.x}" cy="${p.y}" r="${p.total > 0 ? 4 : 2}"
+      fill="${p.total === 0 ? '#e5e7eb' : p.total >= maxVal*0.75 ? '#ef4444' : p.total >= maxVal*0.4 ? '#f97316' : '#3b82f6'}"
+      stroke="#fff" stroke-width="1.5">
+      <title>S${p.semNum} ${p.diaLbl}: ${p.total}</title>
+    </circle>`
+  ).join('');
+
+  const svg = `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+    ${yAxis}${guides}
+    <polygon points="${area}" fill="rgba(59,130,246,.12)"/>
+    <polyline points="${polyline}" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}${xLabels}${diaLabels}
+    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T+CHART_H}" stroke="#d1d5db" stroke-width="1"/>
+    <line x1="${PAD_L}" y1="${PAD_T+CHART_H}" x2="${PAD_L+CHART_W}" y2="${PAD_T+CHART_H}" stroke="#d1d5db" stroke-width="1"/>
+  </svg>`;
+
+  const el = document.getElementById('cargaModalOverlay');
+  if (!el) return;
+  document.getElementById('cargaModalAsig').textContent = asigNombre;
+  document.getElementById('cargaModalTotal').textContent = `Dedicación total acumulada: ${totalDed.toFixed(2)}`;
+  document.getElementById('cargaModalChart').innerHTML =
+    `<div style="overflow-x:auto">${svg}</div>`;
+  el.classList.add('open');
+}
+
+function closeCargaModal() {
+  const el = document.getElementById('cargaModalOverlay');
+  if (el) el.classList.remove('open');
+}
+
+// Mapeo días largo → etiqueta corta y orden en la tabla
+const COORD_DIAS = [
+  { key: 'LUNES',     lbl: 'L' },
+  { key: 'MARTES',    lbl: 'M' },
+  { key: 'MIÉRCOLES', lbl: 'X' },
+  { key: 'JUEVES',    lbl: 'J' },
+  { key: 'VIERNES',   lbl: 'V' },
+];
+
 function renderCoordinacion() {
   const container = document.getElementById('view-coord');
   if (!container) return;
@@ -5998,65 +6162,109 @@ function renderCoordinacion() {
 
   const { semanas, asignaturas, actividades } = COORD_DATA;
 
+  // Set de claves "semana_num_DIA" para días no lectivos → celda gris no editable
+  const noLectivos = new Set(
+    (COORD_DATA.no_lectivos || []).map(n => `${n.semana_num}_${n.dia}`)
+  );
+
   // Inicializar filtro de tipos visible (todos activos por defecto)
   if (!coordTiposVisible) coordTiposVisible = new Set(COORD_TIPOS.map(t => t.codigo));
 
   // Actividades visibles según filtro activo
   const actividadesVisibles = actividades.filter(a => coordTiposVisible.has(a.tipo_actividad));
 
-  // Índice actividades: "semana_asigId" → [acts]
+  // Índice actividades: "semana_asigId_dia" → [acts]  (dia puede ser null → clave "semana_asigId_")
   const actMap = new Map();
   for (const act of actividadesVisibles) {
-    const k = `${act.semana_num}_${act.asignatura_id}`;
+    const k = `${act.semana_num}_${act.asignatura_id}_${act.dia || ''}`;
     if (!actMap.has(k)) actMap.set(k, []);
     actMap.get(k).push(act);
   }
 
-  // Carga total por semana (solo tipos visibles, para colorear cabecera de columna)
+  // Carga total por semana (para colorear cabecera)
   const cargaSemana = {};
   for (const act of actividadesVisibles)
     cargaSemana[act.semana_num] = (cargaSemana[act.semana_num] || 0) + 1;
 
-  // Botones de filtro (toggle por tipo de actividad)
+  // Carga de dedicación acumulada por (asig, semana) para sparklines
+  const dedAsigSem = new Map(); // asigId → [ded_sem0, ded_sem1, ...]
+  for (const asig of asignaturas) {
+    dedAsigSem.set(asig.id, semanas.map(sem => {
+      let total = 0;
+      for (const d of COORD_DIAS) {
+        const kD = `${sem.numero}_${asig.id}_${d.key}`;
+        const kN = `${sem.numero}_${asig.id}_`;
+        for (const a of [...(actMap.get(kD)||[]), ...(actMap.get(kN)||[])]) {
+          if (a.dedicacion) total += a.dedicacion;
+        }
+      }
+      return total;
+    }));
+  }
+
+  // Botones de filtro
   const filtrosHTML = COORD_TIPOS.map(t => {
     const activo = coordTiposVisible.has(t.codigo);
     const style  = activo
       ? `background:${t.color};color:#fff;border-color:${t.color}`
       : `background:#e5e7eb;color:#6b7280;border-color:#d1d5db;text-decoration:line-through`;
     const lock = t.sync ? '🔒' : '';
+    const slbl = COORD_LBL[t.codigo] || t.codigo;
     return `<button class="coord-filtro-btn" style="${style}"
                onclick="toggleCoordTipo('${t.codigo}')"
-               title="${_escHtml(t.desc)}">${lock}${t.codigo}</button>`;
+               title="${t.codigo}: ${_escHtml(t.desc)}">${lock}${slbl}</button>`;
   }).join('');
 
-  // ── Cabecera: fila de semanas ──────────────────────────────────────────────
-  const headCols = semanas.map(sem => {
+  // ── Cabecera fila 1: semana con colspan=5 ──────────────────────────────────
+  const headSems = semanas.map(sem => {
     const carga = cargaSemana[sem.numero] || 0;
     const bg = carga >= COORD_OVERLOAD_THRESHOLD ? 'background:#fca5a5'
              : carga >= COORD_WARN_THRESHOLD      ? 'background:#fde68a' : '';
     const tip = sem.descripcion + (carga ? ` (${carga} actividades)` : '');
-    return `<th class="coord-sem-col-th" style="${bg}">S${sem.numero}<span class="coord-tip">${_escHtml(tip)}</span></th>`;
+    const rango = _fmtSemRango(sem.descripcion);
+    return `<th class="coord-sem-group-th" colspan="5" style="${bg}">S${sem.numero}<br><small class="coord-sem-rango">${rango}</small><span class="coord-tip">${_escHtml(tip)}</span></th>`;
+  }).join('');
+
+  // ── Cabecera fila 2: L M X J V con fecha D/M por semana ───────────────────
+  const headDias = semanas.map(sem => {
+    // Reutilizamos getWeekDayDates pasándole el objeto de semana con descripcion
+    const dates = getWeekDayDates({ descripcion: sem.descripcion });
+    return COORD_DIAS.map(d => {
+      const fecha = dates[d.key] || '';
+      return `<th class="coord-dia-col-th" title="${d.key}">${d.lbl}</th>`;
+    }).join('');
   }).join('');
 
   // ── Filas: una por asignatura ─────────────────────────────────────────────
   const bodyRows = asignaturas.map(asig => {
     const colCls = getSubjectColor(asig.codigo);
-    const cells = semanas.map(sem => {
-      const k    = `${sem.numero}_${asig.id}`;
-      const acts = actMap.get(k) || [];
-      const badges = acts.map(a => {
-        const t   = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
-        const col = t ? t.color : '#888';
-        const lbl = a.sincronizado ? `🔒${a.tipo_actividad}` : a.tipo_actividad;
-        const tip = (t ? t.desc : a.tipo_actividad) + (a.notas ? ': ' + a.notas : '');
-        return `<span class="coord-badge" style="background:${col}" title="${_escHtml(tip)}">${lbl}</span>`;
-      }).join('');
-      // Colorear celda si la semana está cargada
-      const carga = cargaSemana[sem.numero] || 0;
-      const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? 'coord-cell-overload'
-                   : carga >= COORD_WARN_THRESHOLD      ? 'coord-cell-busy' : '';
-      return `<td class="coord-cell ${cellBg}"
-                  onclick="openCoordModal(${sem.numero},${asig.id},'${_escHtml(asig.codigo)}','${_escHtml(asig.nombre).replace(/'/g,"&#39;")}')">${badges}</td>`;
+    const cells = semanas.flatMap(sem => {
+      return COORD_DIAS.map(d => {
+        // Actividades con día concreto
+        const kDia  = `${sem.numero}_${asig.id}_${d.key}`;
+        // Actividades sin día (dia=null, legacy o manuales sin día)
+        const kNull = `${sem.numero}_${asig.id}_`;
+        const acts  = [...(actMap.get(kDia) || []), ...(actMap.get(kNull) || [])];
+        const badges = acts.map(a => {
+          const t   = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
+          const col = t ? t.color : '#888';
+          const slbl = COORD_LBL[a.tipo_actividad] || a.tipo_actividad;
+          const lbl = a.sincronizado ? `🔒${slbl}` : slbl;
+          const ded = COORD_DEDICACION.find(d => d.val === a.dedicacion);
+          const dedHtml = ded ? `<span class="coord-ded-dot" style="background:${ded.color}" title="Dedicación ${ded.label} (${ded.val})">${ded.lbl}</span>` : '';
+          const tip = (t ? t.desc : a.tipo_actividad) + (ded ? ` · Ded. ${ded.label}` : '') + (a.notas ? ': ' + a.notas : '');
+          return `<span class="coord-badge-wrap" title="${_escHtml(tip)}"><span class="coord-badge" style="background:${col}">${lbl}</span>${dedHtml}</span>`;
+        }).join('');
+        const esNoLectivo = noLectivos.has(`${sem.numero}_${d.key}`);
+        if (esNoLectivo) {
+          return `<td class="coord-cell coord-day-cell coord-cell-nolectivo" title="Día no lectivo"></td>`;
+        }
+        const carga = cargaSemana[sem.numero] || 0;
+        const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? 'coord-cell-overload'
+                     : carga >= COORD_WARN_THRESHOLD      ? 'coord-cell-busy' : '';
+        return `<td class="coord-cell coord-day-cell ${cellBg}"
+                    onclick="openCoordModal(${sem.numero},${asig.id},'${_escHtml(asig.codigo)}','${_escHtml(asig.nombre).replace(/'/g,"&#39;")}','${d.key}')">${badges}</td>`;
+      });
     }).join('');
 
     return `<tr>
@@ -6072,16 +6280,35 @@ function renderCoordinacion() {
     <div class="coord-toolbar">
       <button class="btn-secondary coord-sync-btn" onclick="syncCoordinacion().then(()=>renderCoordinacion())">↻ Sincronizar horario</button>
       <button class="btn-secondary" onclick="exportCoordCSV()">⬇ Exportar CSV</button>
+      <button class="btn-secondary" onclick="toggleCoordPesos()" title="Configurar pesos de dedicación">⚙ Pesos</button>
       <div class="coord-filtros" title="Haz clic para mostrar u ocultar cada tipo de actividad">${filtrosHTML}</div>
     </div>
-    <div class="coord-hint">Haz clic en cualquier celda para añadir o eliminar actividades. Pasa el cursor sobre S1, S2… para ver las fechas.</div>
-    <div class="coord-table-wrap">
+    <div id="coordPesosPanel" class="coord-pesos-panel" style="display:none">
+      <strong>Pesos de dedicación</strong>
+      <div class="coord-pesos-grid">
+        ${COORD_DEDICACION.map(d => `
+          <label class="coord-peso-row">
+            <span class="coord-ded-dot" style="background:${d.color}">${d.lbl}</span>
+            <span class="coord-peso-label">${d.label}</span>
+            <input id="peso_${d.nivel}" class="coord-peso-input" type="number"
+                   min="0.01" max="10" step="0.01" value="${d.val}">
+          </label>`).join('')}
+      </div>
+      <div class="coord-pesos-footer">
+        <small>Los cambios actualizan LAB/INF (Baja) y EXP (Alta) automáticamente.</small>
+        <button class="btn-primary" onclick="saveCoordPesos()">Guardar</button>
+        <button class="btn-secondary" onclick="toggleCoordPesos()">Cancelar</button>
+      </div>
+    </div>
+    <div class="coord-hint">Haz clic en el día exacto para añadir o eliminar actividades. Pasa el cursor sobre S1, S2… para ver las fechas.</div>
+    <div class="coord-table-wrap" id="coordTableWrap">
       <table class="coord-table">
         <thead>
           <tr>
-            <th class="coord-asig-header-th">Asignatura</th>
-            ${headCols}
+            <th class="coord-asig-header-th" rowspan="2">Asignatura</th>
+            ${headSems}
           </tr>
+          <tr>${headDias}</tr>
         </thead>
         <tbody>${bodyRows}</tbody>
       </table>
@@ -6089,27 +6316,247 @@ function renderCoordinacion() {
     <div class="coord-leyenda-footer">
       ${COORD_TIPOS.map(t =>
         `<span class="coord-ley-entry">
-           <span class="coord-badge" style="background:${t.color}">${t.sync ? '🔒' : ''}${t.codigo}</span>
-           <span class="coord-ley-text">${t.desc}</span>
+           <span class="coord-badge" style="background:${t.color}">${t.sync ? '🔒' : ''}${COORD_LBL[t.codigo]||t.codigo}</span>
+           <span class="coord-ley-text"><strong>${t.codigo}</strong> — ${t.desc}</span>
          </span>`
       ).join('')}
-    </div>`;
+    </div>
+    ${_buildCargaChartsHTML(asignaturas, semanas, dedAsigSem, actMap)}`;
 }
 
 
-function openCoordModal(semanaNum, asignaturaId, codigo, nombre) {
+function _buildCargaGlobalHTML(asignaturas, semanas, actMap) {
+  if (!semanas.length || !asignaturas.length) return '';
+
+  // Calcular carga total diaria (suma de dedicacion de todas las asignaturas)
+  const puntos = []; // {semNum, diaKey, diaLbl, total, rango}
+  for (const sem of semanas) {
+    for (const d of COORD_DIAS) {
+      let total = 0;
+      for (const asig of asignaturas) {
+        const kD = `${sem.numero}_${asig.id}_${d.key}`;
+        const kN = `${sem.numero}_${asig.id}_`;
+        for (const a of [...(actMap.get(kD)||[]), ...(actMap.get(kN)||[])]) {
+          if (a.dedicacion) total += a.dedicacion;
+        }
+      }
+      puntos.push({ semNum: sem.numero, diaKey: d.key, diaLbl: d.lbl,
+                    total: Math.round(total * 100) / 100, rango: sem.descripcion });
+    }
+  }
+
+  const n = puntos.length;
+  const maxVal = Math.max(...puntos.map(p => p.total), 0.01);
+
+  // Dimensiones del gráfico
+  const PAD_L = 38, PAD_R = 12, PAD_T = 14, PAD_B = 36;
+  const PT_W = 12;           // px por punto
+  const CHART_W = n * PT_W;
+  const CHART_H = 110;
+  const SVG_W = PAD_L + CHART_W + PAD_R;
+  const SVG_H = PAD_T + CHART_H + PAD_B;
+
+  // Función de escala Y
+  const scaleY = v => PAD_T + CHART_H - Math.round((v / maxVal) * CHART_H);
+
+  // Línea y área
+  const pts = puntos.map((p, i) => {
+    const x = PAD_L + i * PT_W + PT_W / 2;
+    const y = scaleY(p.total);
+    return { x, y, ...p };
+  });
+
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+  const area = `${PAD_L + PT_W/2},${PAD_T + CHART_H} ` + polyline +
+               ` ${PAD_L + (n-1)*PT_W + PT_W/2},${PAD_T + CHART_H}`;
+
+  // Separadores de semana + etiquetas
+  let guides = '', xLabels = '';
+  semanas.forEach((sem, si) => {
+    const x = PAD_L + si * COORD_DIAS.length * PT_W;
+    if (si > 0) guides += `<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+CHART_H}"
+      stroke="#e5e7eb" stroke-width="1" stroke-dasharray="3,3"/>`;
+    const labelX = x + (COORD_DIAS.length * PT_W) / 2;
+    xLabels += `<text x="${labelX}" y="${SVG_H - 20}" text-anchor="middle"
+      font-size="8" font-weight="600" fill="#555">S${sem.numero}</text>`;
+    const rango = _fmtSemRango(sem.descripcion);
+    xLabels += `<text x="${labelX}" y="${SVG_H - 9}" text-anchor="middle"
+      font-size="6.5" fill="#aaa">${rango}</text>`;
+  });
+
+  // Etiquetas de día bajo cada punto (cada 5 puntos = cada semana, solo el primero)
+  let diaLabels = '';
+  pts.forEach((p, i) => {
+    diaLabels += `<text x="${p.x}" y="${PAD_T + CHART_H + 8}" text-anchor="middle"
+      font-size="6.5" fill="#bbb">${p.diaLbl}</text>`;
+  });
+
+  // Eje Y: 4 líneas de referencia
+  let yAxis = '';
+  [0.25, 0.5, 0.75, 1.0].forEach(frac => {
+    const v = Math.round(maxVal * frac * 10) / 10;
+    const y = scaleY(maxVal * frac);
+    yAxis += `<line x1="${PAD_L}" y1="${y}" x2="${PAD_L + CHART_W}" y2="${y}"
+      stroke="#f3f4f6" stroke-width="1"/>`;
+    yAxis += `<text x="${PAD_L - 4}" y="${y + 3}" text-anchor="end"
+      font-size="7" fill="#aaa">${v}</text>`;
+  });
+
+  // Puntos con tooltip
+  const dots = pts.map(p =>
+    `<circle cx="${p.x}" cy="${p.y}" r="${p.total > 0 ? 3 : 1.5}"
+      fill="${p.total === 0 ? '#e5e7eb' : p.total >= maxVal*0.75 ? '#ef4444' : p.total >= maxVal*0.4 ? '#f97316' : '#3b82f6'}"
+      stroke="#fff" stroke-width="1">
+      <title>S${p.semNum} ${p.diaKey.slice(0,3)}: ${p.total}</title>
+    </circle>`
+  ).join('');
+
+  const svg = `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+    ${yAxis}${guides}
+    <polygon points="${area}" fill="rgba(59,130,246,.10)"/>
+    <polyline points="${polyline}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>
+    ${dots}
+    ${xLabels}${diaLabels}
+    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T+CHART_H}"
+      stroke="#d1d5db" stroke-width="1"/>
+    <line x1="${PAD_L}" y1="${PAD_T+CHART_H}" x2="${PAD_L+CHART_W}" y2="${PAD_T+CHART_H}"
+      stroke="#d1d5db" stroke-width="1"/>
+  </svg>`;
+
+  return `<div class="coord-carga-global">
+    <div class="coord-carga-global-title">📈 Carga total diaria del cuatrimestre</div>
+    <div style="overflow-x:auto">${svg}</div>
+  </div>`;
+}
+
+function _buildCargaChartsHTML(asignaturas, semanas, dedAsigSem, actMap) {
+  if (!asignaturas.length) return '';
+  const globalChart = _buildCargaGlobalHTML(asignaturas, semanas, actMap || new Map());
+
+  // ── Gráfico de línea diaria por asignatura (mismo estilo que global) ──────
+  const n = semanas.length * COORD_DIAS.length;
+  const PAD_L = 30, PAD_R = 8, PAD_T = 10, PAD_B = 28;
+  const PT_W = 10;
+  const CHART_W = n * PT_W;
+  const CHART_H = 70;
+  const SVG_W = PAD_L + CHART_W + PAD_R;
+  const SVG_H = PAD_T + CHART_H + PAD_B;
+
+  const cards = asignaturas.map(asig => {
+    // Puntos diarios para esta asignatura
+    const puntos = [];
+    for (const sem of semanas) {
+      for (const d of COORD_DIAS) {
+        let total = 0;
+        const kD = `${sem.numero}_${asig.id}_${d.key}`;
+        const kN = `${sem.numero}_${asig.id}_`;
+        for (const a of [...((actMap||new Map()).get(kD)||[]), ...((actMap||new Map()).get(kN)||[])]) {
+          if (a.dedicacion) total += a.dedicacion;
+        }
+        puntos.push({ semNum: sem.numero, diaLbl: d.lbl,
+                      total: Math.round(total * 100) / 100,
+                      rango: sem.descripcion });
+      }
+    }
+
+    const maxVal = Math.max(...puntos.map(p => p.total), 0.01);
+    const totalDed = puntos.reduce((s, p) => s + p.total, 0);
+    const scaleY = v => PAD_T + CHART_H - Math.round((v / maxVal) * CHART_H);
+
+    const pts = puntos.map((p, i) => ({
+      x: PAD_L + i * PT_W + PT_W / 2,
+      y: scaleY(p.total), ...p
+    }));
+
+    const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+    const area = `${pts[0].x},${PAD_T+CHART_H} ` + polyline +
+                 ` ${pts[pts.length-1].x},${PAD_T+CHART_H}`;
+
+    // Separadores de semana
+    let guides = '', xLabels = '';
+    semanas.forEach((sem, si) => {
+      const x = PAD_L + si * COORD_DIAS.length * PT_W;
+      if (si > 0) guides += `<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+CHART_H}"
+        stroke="#e5e7eb" stroke-width="1" stroke-dasharray="2,2"/>`;
+      if (si % 2 === 0) {
+        const lx = x + (COORD_DIAS.length * PT_W) / 2;
+        xLabels += `<text x="${lx}" y="${SVG_H-4}" text-anchor="middle"
+          font-size="7" fill="#aaa">S${sem.numero}</text>`;
+      }
+    });
+
+    // Eje Y: 2 líneas de referencia
+    let yAxis = '';
+    [0.5, 1.0].forEach(frac => {
+      const v = Math.round(maxVal * frac * 10) / 10;
+      const y = scaleY(maxVal * frac);
+      yAxis += `<line x1="${PAD_L}" y1="${y}" x2="${PAD_L+CHART_W}" y2="${y}"
+        stroke="#f3f4f6" stroke-width="1"/>`;
+      yAxis += `<text x="${PAD_L-3}" y="${y+3}" text-anchor="end"
+        font-size="6.5" fill="#bbb">${v}</text>`;
+    });
+
+    const dots = pts.map(p =>
+      `<circle cx="${p.x}" cy="${p.y}" r="${p.total > 0 ? 2.5 : 1}"
+        fill="${p.total === 0 ? '#e5e7eb' : p.total >= maxVal*0.75 ? '#ef4444' : p.total >= maxVal*0.4 ? '#f97316' : '#3b82f6'}"
+        stroke="#fff" stroke-width="1">
+        <title>S${p.semNum} ${p.diaLbl}: ${p.total}</title>
+      </circle>`
+    ).join('');
+
+    const svg = `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+      ${yAxis}${guides}
+      <polygon points="${area}" fill="rgba(59,130,246,.10)"/>
+      <polyline points="${polyline}" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-linejoin="round"/>
+      ${dots}${xLabels}
+      <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T+CHART_H}" stroke="#d1d5db" stroke-width="1"/>
+      <line x1="${PAD_L}" y1="${PAD_T+CHART_H}" x2="${PAD_L+CHART_W}" y2="${PAD_T+CHART_H}" stroke="#d1d5db" stroke-width="1"/>
+    </svg>`;
+
+    const asigNombreEsc = _escHtml(asig.nombre).replace(/'/g,"&#39;");
+    return `<div class="coord-carga-card" onclick="openCargaModal(${asig.id},'${asigNombreEsc}')" title="Ver detalle">
+      <div class="coord-carga-card-hdr">
+        <span class="coord-carga-card-nombre">${_escHtml(asig.nombre)}</span>
+        <span class="coord-carga-card-total">${totalDed.toFixed(2)}</span>
+      </div>
+      <div style="overflow-x:auto">${svg}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="coord-carga-section">
+    ${globalChart}
+    <div class="coord-carga-section-title">📊 Evolución por asignatura
+      <small>(haz clic para ver detalle diario)</small>
+    </div>
+    <div class="coord-carga-grid">${cards}</div>
+    <div class="coord-carga-leyenda">
+      <span><span style="background:#3b82f6" class="coord-carga-dot"></span>Baja</span>
+      <span><span style="background:#f97316" class="coord-carga-dot"></span>Media-Alta</span>
+      <span><span style="background:#ef4444" class="coord-carga-dot"></span>Muy alta</span>
+    </div>
+  </div>`;
+}
+
+
+function openCoordModal(semanaNum, asignaturaId, codigo, nombre, dia) {
+  // dia: clave larga ('LUNES','MARTES',...) o undefined/null
   const grupoKey = `${currentCurso}_${currentCuat}_grupo_${currentGroup}`;
-  const existing = (COORD_DATA ? COORD_DATA.actividades : []).filter(
-    a => a.semana_num === semanaNum && a.asignatura_id === asignaturaId
+  // Actividades relevantes: las del día concreto + las sin día (legacy)
+  const existing = (COORD_DATA ? COORD_DATA.actividades : []).filter(a =>
+    a.semana_num === semanaNum && a.asignatura_id === asignaturaId &&
+    (!dia || !a.dia || a.dia === dia)
   );
 
   // Cabecera
   document.getElementById('coordModalTitle').textContent = nombre;
 
-  // Línea de semana
+  // Línea de semana + día
   const semInfo = (COORD_DATA.semanas||[]).find(s => s.numero === semanaNum);
   const semDesc = semInfo ? semInfo.descripcion.replace(/^SEMANA \d+:\s*/i,'') : `Semana ${semanaNum}`;
-  document.getElementById('coordModalSem').textContent = '📅 ' + semDesc;
+  const diaLabel = dia ? ` — ${(COORD_DIAS.find(d=>d.key===dia)||{}).lbl || dia}` : '';
+  const dates    = semInfo ? getWeekDayDates({ descripcion: semInfo.descripcion }) : {};
+  const fechaLabel = dia && dates[dia] ? ` (${dates[dia]})` : '';
+  document.getElementById('coordModalSem').textContent = '📅 ' + semDesc + diaLabel + fechaLabel;
 
   // Advertencias
   const warnings = _coordWarnings(semanaNum);
@@ -6122,8 +6569,7 @@ function openCoordModal(semanaNum, asignaturaId, codigo, nombre) {
   }
 
   // Lista de tipos de actividad
-  // Los tipos auto-sincronizados (LAB/INF/EXP) se muestran solo como info,
-  // sin checkbox: el usuario no puede añadirlos ni quitarlos manualmente.
+  // Los tipos auto-sincronizados (LAB/INF/EXP) se muestran solo como info.
   const listEl = document.getElementById('coordModalList');
 
   const syncActivos = COORD_TIPOS.filter(t => t.sync && existing.find(a => a.tipo_actividad === t.codigo));
@@ -6136,22 +6582,32 @@ function openCoordModal(semanaNum, asignaturaId, codigo, nombre) {
        </div>`
     : '';
 
+  const diaParam = dia ? `'${dia}'` : 'null';
   const manualesHTML = COORD_TIPOS.filter(t => !t.sync).map(t => {
-    const act      = existing.find(a => a.tipo_actividad === t.codigo);
+    const act      = existing.find(a => a.tipo_actividad === t.codigo && (!dia || !a.dia || a.dia === dia));
     const isOn     = !!act;
     const notasVal = act ? _escHtml(act.notas||'') : '';
+    const dedVal   = act ? act.dedicacion : null;
     const notasInput = isOn
       ? `<input class="coord-notas-inline" type="text" placeholder="Nota opcional"
                value="${notasVal}"
-               onchange="updateCoordNotas('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.value)">`
+               onchange="updateCoordNotas('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.value,${diaParam})">`
       : '';
+    const dedSelector = isOn ? `<span class="coord-ded-selector">
+      ${COORD_DEDICACION.map(d =>
+        `<button class="coord-ded-btn ${dedVal===d.val?'active':''}"
+                 style="background:${dedVal===d.val?d.color:'#e5e7eb'};color:${dedVal===d.val?'#fff':'#555'}"
+                 title="${d.label} (${d.val})"
+                 onclick="event.stopPropagation();setCoordDedicacion('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',${d.val},${diaParam})">${d.lbl}</button>`
+      ).join('')}
+    </span>` : '';
     return `<label class="coord-tipo-row">
       <input type="checkbox" data-tipo="${t.codigo}"
              ${isOn?'checked':''}
-             onchange="toggleCoordActividad('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.checked,${semanaNum},${asignaturaId},'${_escHtml(codigo)}','${_escHtml(nombre).replace(/'/g,"\\'")}')">
-      <span class="coord-badge" style="background:${t.color}">${t.codigo}</span>
+             onchange="toggleCoordActividad('${grupoKey}',${semanaNum},${asignaturaId},'${t.codigo}',this.checked,'${_escHtml(codigo)}','${_escHtml(nombre).replace(/'/g,"\'")}',${diaParam})">
+      <span class="coord-badge" style="background:${t.color}">${COORD_LBL[t.codigo]||t.codigo}</span>
       <span class="coord-tipo-desc">${t.desc}</span>
-      ${notasInput}
+      ${dedSelector}${notasInput}
     </label>`;
   }).join('');
 
@@ -6164,18 +6620,19 @@ function closeCoordModal() {
   document.getElementById('coordModalOverlay').classList.remove('open');
 }
 
-async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, checked,
-                                       _semNum, _asigId, _codigo, _nombre) {
+async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, checked, _codigo, _nombre, dia) {
   const notasInput = event.target.closest('.coord-tipo-row')
                           ?.querySelector('.coord-notas-inline');
   const notas = notasInput ? notasInput.value : '';
+  // Para tipos manuales sin dedicación asignada, no pasar dedicacion al añadir
+  // (el usuario la asigna luego con setCoordDedicacion)
   await fetch('/api/coordinacion/set', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       grupo_key: grupoKey, semana_num: semanaNum,
       asignatura_id: asignaturaId, tipo_actividad: tipo,
-      notas: notas, action: checked ? 'add' : 'remove'
+      notas: notas, dia: dia || null, dedicacion: null, action: checked ? 'add' : 'remove'
     })
   });
   // Recargar datos y re-renderizar la matriz
@@ -6189,17 +6646,85 @@ async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, che
   const asig = (COORD_DATA.asignaturas||[]).find(a => a.id === asignaturaId);
   openCoordModal(semanaNum, asignaturaId,
     asig ? asig.codigo : _codigo,
-    asig ? asig.nombre : _nombre);
+    asig ? asig.nombre : _nombre,
+    dia);
 }
 
-async function updateCoordNotas(grupoKey, semanaNum, asignaturaId, tipo, notas) {
+
+
+let _coordPesosOpen = false;
+
+function toggleCoordPesos() {
+  _coordPesosOpen = !_coordPesosOpen;
+  const panel = document.getElementById('coordPesosPanel');
+  if (!panel) return;
+  if (_coordPesosOpen) {
+    // Rellenar inputs con valores actuales
+    COORD_DEDICACION.forEach(d => {
+      const inp = document.getElementById(`peso_${d.nivel}`);
+      if (inp) inp.value = d.val;
+    });
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+async function saveCoordPesos() {
+  const body = {};
+  COORD_DEDICACION.forEach(d => {
+    const inp = document.getElementById(`peso_${d.nivel}`);
+    if (inp) body[d.nivel] = parseFloat(inp.value) || d.val;
+  });
+  const r = await fetch('/api/coord/pesos/set', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  if (data.ok) {
+    _applyCoordPesos(data.pesos);
+    _coordPesosOpen = false;
+    document.getElementById('coordPesosPanel').style.display = 'none';
+    // Recargar datos (la BD ya tiene los nuevos valores)
+    const params = new URLSearchParams({
+      curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup
+    });
+    const rd = await fetch(`/api/coordinacion?${params}`);
+    COORD_DATA = await rd.json();
+    renderCoordinacion();
+  } else {
+    alert('Error al guardar pesos: ' + (data.error || ''));
+  }
+}
+
+async function setCoordDedicacion(grupoKey, semanaNum, asignaturaId, tipo, dedicacion, dia) {
   await fetch('/api/coordinacion/set', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       grupo_key: grupoKey, semana_num: semanaNum,
       asignatura_id: asignaturaId, tipo_actividad: tipo,
-      notas: notas, action: 'add'
+      notas: '', dia: dia || null, dedicacion: dedicacion, action: 'add'
+    })
+  });
+  const params = new URLSearchParams({ curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup });
+  const r = await fetch(`/api/coordinacion?${params}`);
+  COORD_DATA = await r.json();
+  renderCoordinacion();
+  const asig = (COORD_DATA.asignaturas||[]).find(a => a.id === asignaturaId);
+  openCoordModal(semanaNum, asignaturaId,
+    asig ? asig.codigo : '', asig ? asig.nombre : '', dia);
+}
+
+async function updateCoordNotas(grupoKey, semanaNum, asignaturaId, tipo, notas, dia) {
+  await fetch('/api/coordinacion/set', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      grupo_key: grupoKey, semana_num: semanaNum,
+      asignatura_id: asignaturaId, tipo_actividad: tipo,
+      notas: notas, dia: dia || null, action: 'add'
     })
   });
   const params = new URLSearchParams({
@@ -6223,6 +6748,11 @@ function _coordWarnings(semanaNum) {
 function exportCoordCSV() {
   if (!COORD_DATA || !COORD_DATA.ok) return;
   const { semanas, asignaturas, actividades } = COORD_DATA;
+
+  // Set de claves "semana_num_DIA" para días no lectivos → celda gris no editable
+  const noLectivos = new Set(
+    (COORD_DATA.no_lectivos || []).map(n => `${n.semana_num}_${n.dia}`)
+  );
   const actMap = new Map();
   for (const a of actividades) {
     const k = `${a.semana_num}_${a.asignatura_id}`;
@@ -6251,89 +6781,120 @@ function exportCoordCSV() {
 
 // Helper: genera el HTML interior del contenedor de captura para una coordinación.
 // Devuelve { html, containerWidth } para que el llamador ajuste cap.style.width.
-function _buildCoordCaptureHTML(coordData) {
-  const { semanas, asignaturas, actividades: _todasActividades } = coordData;
+function _buildCoordCaptureHTML(coordData, semanasSlice, compact) {
+  // semanasSlice: subconjunto de semanas (null = todas).
+  // compact: true → columnas más estrechas para caber en una sola hoja.
+  const { asignaturas, actividades: _todasActividades } = coordData;
+  const semanas = semanasSlice || coordData.semanas;
 
-  // Aplicar filtro de tipos visible (igual que en la vista interactiva)
   const visibles = coordTiposVisible || new Set(COORD_TIPOS.map(t => t.codigo));
   const actividades = _todasActividades.filter(a => visibles.has(a.tipo_actividad));
 
+  // Índice por (semana, asig, dia)
   const actMap = new Map();
   for (const a of actividades) {
-    const k = `${a.semana_num}_${a.asignatura_id}`;
+    const k = `${a.semana_num}_${a.asignatura_id}_${a.dia || ''}`;
     if (!actMap.has(k)) actMap.set(k, []);
     actMap.get(k).push(a);
   }
   const cargaSemana = {};
   for (const a of actividades) cargaSemana[a.semana_num] = (cargaSemana[a.semana_num]||0)+1;
 
-  // Anchos
+  // Anchos de columna
   const maxChars = asignaturas.reduce((m,a) => Math.max(m, (a.nombre||'').length), 0);
-  const COL_ASIG_W = Math.min(Math.max(Math.round(maxChars * 5.5) + 20, 120), 220);
-  const colW = 38;
-  const containerWidth = Math.max(COL_ASIG_W + colW * semanas.length + 20, 900);
+  const COL_ASIG_W = compact
+    ? Math.min(Math.max(Math.round(maxChars * 4) + 10, 90), 150)
+    : Math.min(Math.max(Math.round(maxChars * 5) + 16, 110), 190);
+  const DAY_W = compact ? 11 : 16;   // px por columna de día
+  const containerWidth = COL_ASIG_W + semanas.length * 5 * DAY_W + 52; // +32px padding box-sizing del cap
 
-  const headCols = semanas.map(sem => {
+  // Cabecera fila 1: semanas (colspan=5)
+  const headSems = semanas.map(sem => {
     const carga = cargaSemana[sem.numero]||0;
     const bg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fca5a5'
              : carga >= COORD_WARN_THRESHOLD      ? '#fde68a' : '#e8eaf6';
-    return `<th style="background:${bg};font-size:9px;padding:3px 2px;text-align:center;
-              border:1px solid #bbb;width:${colW}px;font-weight:700;color:#1a237e">
-              S${sem.numero}</th>`;
+    const rango = _fmtSemRango(sem.descripcion);
+    return `<th colspan="5" style="background:${bg};font-size:8px;padding:2px 1px;text-align:center;
+              border:1px solid #bbb;font-weight:700;color:#1a237e;border-right:2px solid #999;line-height:1.3">
+              S${sem.numero}<br><span style="font-size:6.5px;font-weight:400;color:#444">${rango}</span></th>`;
   }).join('');
 
-  const bodyRows = asignaturas.map(asig => {
-    const cells = semanas.map(sem => {
-      const k = `${sem.numero}_${asig.id}`;
-      const acts = actMap.get(k)||[];
-      const carga = cargaSemana[sem.numero]||0;
-      const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fff0f0'
-                   : carga >= COORD_WARN_THRESHOLD      ? '#fffbea' : '#fff';
-      const badges = acts.map(a => {
-        const t = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
-        const col = t ? t.color : '#888';
-        return `<span style="display:inline-block;background:${col};color:#fff;font-size:7.5px;
-                  font-weight:700;padding:1px 3px;border-radius:2px;margin:1px;line-height:1.4">
-                  ${a.tipo_actividad}</span>`;
-      }).join('');
-      return `<td style="border:1px solid #ddd;padding:2px;background:${cellBg};
-                vertical-align:middle;text-align:center;width:${colW}px">${badges}</td>`;
+  // Cabecera fila 2: L M X J V con fecha
+  const DIAS_PDF = [
+    {key:'LUNES',lbl:'L'},{key:'MARTES',lbl:'M'},{key:'MIÉRCOLES',lbl:'X'},
+    {key:'JUEVES',lbl:'J'},{key:'VIERNES',lbl:'V'}
+  ];
+  const headDias = semanas.map(sem => {
+    const dates = getWeekDayDates({ descripcion: sem.descripcion });
+    return DIAS_PDF.map((d,i) => {
+      const rb = i===4 ? '2px solid #999' : '1px solid #ddd';
+      return `<th style="width:${DAY_W}px;min-width:${DAY_W}px;font-size:7px;padding:2px 1px;
+                text-align:center;border:1px solid #ddd;border-right:${rb};
+                color:#555;font-weight:600">${d.lbl}</th>`;
     }).join('');
-    const short = asig.nombre.length > 28 ? asig.nombre.substring(0,26)+'…' : asig.nombre;
+  }).join('');
+
+  // Filas de asignaturas
+  const bodyRows = asignaturas.map(asig => {
+    const cells = semanas.flatMap(sem =>
+      DIAS_PDF.map((d,i) => {
+        const kDia  = `${sem.numero}_${asig.id}_${d.key}`;
+        const kNull = `${sem.numero}_${asig.id}_`;
+        const acts  = [...(actMap.get(kDia)||[]), ...(actMap.get(kNull)||[])];
+        const carga = cargaSemana[sem.numero]||0;
+        const cellBg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fff0f0'
+                     : carga >= COORD_WARN_THRESHOLD      ? '#fffbea' : '#fff';
+        const badges = acts.map(a => {
+          const t = COORD_TIPOS.find(x => x.codigo === a.tipo_actividad);
+          const col = t ? t.color : '#888';
+          const slbl = COORD_LBL[a.tipo_actividad] || a.tipo_actividad;
+          return `<span style="display:inline-block;background:${col};color:#fff;font-size:6px;
+                    font-weight:700;padding:1px 2px;border-radius:2px;margin:0;line-height:1.3">
+                    ${slbl}</span>`;
+        }).join('');
+        const rb = i===4 ? '2px solid #999' : '1px solid #ddd';
+        return `<td style="border:1px solid #eee;border-right:${rb};padding:1px;
+                  background:${cellBg};vertical-align:middle;text-align:center;
+                  width:${DAY_W}px;min-width:${DAY_W}px;max-width:${DAY_W}px">${badges}</td>`;
+      })
+    ).join('');
+    const short = asig.nombre.length > 26 ? asig.nombre.substring(0,24)+'…' : asig.nombre;
     return `<tr>
-      <td style="border:1px solid #ddd;padding:4px 6px;background:#f5f5f5;
-                 white-space:normal;word-break:break-word;font-size:9px;
+      <td style="border:1px solid #ddd;border-right:2px solid #bbb;padding:3px 5px;
+                 background:#f5f5f5;white-space:nowrap;font-size:8px;
                  vertical-align:middle;width:${COL_ASIG_W}px;min-width:${COL_ASIG_W}px">
-        <strong>${_escHtml(short)}</strong><br>
-        <span style="color:#777;font-size:8px">${asig.codigo}</span>
+        <strong style="font-size:${compact?'7':'8'}px">${_escHtml(short)}</strong>
+        <span style="color:#777;font-size:${compact?'6':'7'}px;margin-left:2px">${asig.codigo}</span>
       </td>${cells}</tr>`;
   }).join('');
 
   const leyenda = COORD_TIPOS.filter(t => visibles.has(t.codigo)).map(t =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:9px">
-       <span style="background:${t.color};color:#fff;padding:1px 5px;border-radius:3px;
-                    font-weight:700;font-size:8.5px">${t.codigo}</span>${t.desc}
+    `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:8px">
+       <span style="background:${t.color};color:#fff;padding:1px 4px;border-radius:2px;
+                    font-weight:700;font-size:7px">${COORD_LBL[t.codigo]||t.codigo}</span>
+       <strong>${t.codigo}</strong> — ${t.desc}
      </span>`
   ).join('');
 
   const html = `
-    <div style="font-family:'Segoe UI',Arial,sans-serif;padding:6px 0">
-      <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:2px">${leyenda}</div>
-      <table style="border-collapse:collapse;table-layout:fixed;font-size:10px">
+    <div style="font-family:'Segoe UI',Arial,sans-serif;padding:4px 0">
+      <div style="margin-bottom:4px;display:flex;flex-wrap:wrap;gap:2px">${leyenda}</div>
+      <table style="border-collapse:collapse;table-layout:fixed;font-size:9px">
         <thead>
           <tr>
-            <th style="background:#c5cae9;font-size:10px;padding:5px 7px;text-align:left;
-                       border:1px solid #bbb;white-space:nowrap;
-                       width:${COL_ASIG_W}px;min-width:${COL_ASIG_W}px">Asignatura</th>
-            ${headCols}
+            <th rowspan="2" style="background:#c5cae9;font-size:9px;padding:4px 6px;
+                text-align:left;border:1px solid #bbb;border-right:2px solid #bbb;
+                vertical-align:middle;
+                width:${COL_ASIG_W}px;min-width:${COL_ASIG_W}px">Asignatura</th>
+            ${headSems}
           </tr>
+          <tr>${headDias}</tr>
         </thead>
         <tbody>${bodyRows}</tbody>
       </table>
-      <div style="margin-top:6px;font-size:8px;color:#888">
+      <div style="margin-top:4px;font-size:7px;color:#888">
         🔒 = sincronizado desde el horario &nbsp;·&nbsp;
-        Fondo amarillo = semana con carga moderada &nbsp;·&nbsp;
-        Fondo rojo = semana sobrecargada
+        Fondo amarillo = semana con carga moderada &nbsp;·&nbsp; Fondo rojo = sobrecargada
       </div>
     </div>`;
 
@@ -6360,6 +6921,22 @@ function _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel) {
 }
 
 // ── Exportación PDF del grupo actual ─────────────────────────────────────────
+
+// Construye el HTML del gráfico de carga global para captura PDF
+function _buildCargaGlobalCaptureHTML(coordData) {
+  const { semanas, asignaturas, actividades } = coordData;
+  const visibles = coordTiposVisible || new Set(COORD_TIPOS.map(t => t.codigo));
+  const acts = actividades.filter(a => visibles.has(a.tipo_actividad));
+  // Reconstruir actMap
+  const actMap = new Map();
+  for (const a of acts) {
+    const k = `${a.semana_num}_${a.asignatura_id}_${a.dia || ''}`;
+    if (!actMap.has(k)) actMap.set(k, []);
+    actMap.get(k).push(a);
+  }
+  return _buildCargaGlobalHTML(asignaturas, semanas, actMap);
+}
+
 async function exportCoordPDF() {
   if (!COORD_DATA || !COORD_DATA.ok) {
     alert('Primero abre la vista Coordinación para cargar los datos.');
@@ -6385,32 +6962,40 @@ async function exportCoordPDF() {
     const cuatLabel  = gData ? (_cuat[gData.cuatrimestre] || gData.cuatrimestre) : '';
     const grupoLabel = gData ? 'Grupo ' + gData.grupo : COORD_DATA.grupo_key;
 
-    const { html, containerWidth } = _buildCoordCaptureHTML(COORD_DATA);
-    const cap = makeCaptureContainer();
-    cap.style.width = containerWidth + 'px';
-    cap.innerHTML = html;
-
-    document.body.appendChild(cap);
-    await new Promise(r => setTimeout(r, 120));
-    setPdfProgress(55, 'Capturando imagen…');
-
-    const canvas = await html2canvas(cap, {
-      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
-    });
-    document.body.removeChild(cap);
-
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
-
-    setPdfProgress(80, 'Generando PDF…');
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
     const PW = pdf.internal.pageSize.getWidth();
     const PH = pdf.internal.pageSize.getHeight();
-    const ratio = canvas.width / canvas.height;
-    const availW = PW - 16, availH = PH - 20;
-    let iw = availW, ih = availW / ratio;
-    if (ih > availH) { ih = availH; iw = availH * ratio; }
-    const ox = (PW - iw) / 2;
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', ox, 16, iw, ih);
+    const cap = makeCaptureContainer();  // ya hace appendChild internamente
+
+    try {
+      setPdfProgress(40, 'Construyendo tabla y gráfico…');
+      const { html: tableHTML, containerWidth } = _buildCoordCaptureHTML(COORD_DATA, null, true);
+      const chartHTML = _buildCargaGlobalCaptureHTML(COORD_DATA);
+      const totalW = Math.max(containerWidth, COORD_DATA.semanas.length * 5 * 14 + 60);
+      cap.style.width = totalW + 'px';
+      cap.innerHTML = `<div style="font-family:'Segoe UI',Arial,sans-serif;background:#fff">
+        ${tableHTML}
+        <div style="margin-top:14px">${chartHTML}</div>
+      </div>`;
+      await new Promise(r => setTimeout(r, 120));
+
+      setPdfProgress(65, 'Capturando imagen…');
+      const canvas = await html2canvas(cap, {
+        scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
+        windowWidth: totalW, width: totalW
+      });
+      if (!canvas) throw new Error('html2canvas devolvió null');
+
+      _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
+      const ratio = canvas.width / canvas.height;
+      const availW = PW - 16, availH = PH - 20;
+      let iw = availW, ih = availW / ratio;
+      if (ih > availH) { ih = availH; iw = availH * ratio; }
+      const ox = (PW - iw) / 2;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', ox, 16, iw, ih);
+    } finally {
+      if (cap.parentNode) cap.parentNode.removeChild(cap);
+    }
 
     setPdfProgress(95, 'Descargando…');
     pdf.save(`${EXPORT_PREFIX || 'coordinacion'}_${COORD_DATA.grupo_key}.pdf`);
@@ -6419,7 +7004,8 @@ async function exportCoordPDF() {
 
   } catch(e) {
     hidePdfOverlay();
-    alert('Error al generar PDF: ' + e.message);
+    console.error('exportCoordPDF error:', e);
+    alert('Error al generar PDF: ' + (e && e.message ? e.message : String(e)));
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
@@ -6445,7 +7031,7 @@ async function exportCoordAllPDF() {
     const [, logo] = await Promise.all([loadPdfLibs(), _loadLogo()]);
     const { jsPDF } = window.jspdf;
 
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
     const PW = pdf.internal.pageSize.getWidth();
     const PH = pdf.internal.pageSize.getHeight();
     const _ord  = ['','1.º','2.º','3.º','4.º','5.º','6.º'];
@@ -6482,32 +7068,38 @@ async function exportCoordAllPDF() {
       }
       if (!cData || !cData.ok || !cData.asignaturas || !cData.asignaturas.length) continue;
 
-      // Nueva página (la primera usa la que crea jsPDF al instanciar)
-      if (pagesAdded > 0) pdf.addPage('a4', 'l');
-
-      // Cabecera de página
+      // Cabecera de página (la addPage/addCoordPageHeader se hace dentro del loop de semanas)
       const cursoLabel = _ord[gData.curso] || gData.curso + '.º';
       const cuatLabel  = _cuat[gData.cuatrimestre] || gData.cuatrimestre;
       const grupoLabel = 'Grupo ' + gData.grupo;
-      _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
 
-      // Construir tabla y capturar
-      const { html, containerWidth } = _buildCoordCaptureHTML(cData);
-      cap.style.width = containerWidth + 'px';
-      cap.innerHTML = html;
+
+      // Combinar tabla + gráfico en la misma captura
+      const { html, containerWidth } = _buildCoordCaptureHTML(cData, null, true);
+      const chartHTML2 = _buildCargaGlobalCaptureHTML(cData);
+      const totalW2 = Math.max(containerWidth, cData.semanas.length * 5 * 14 + 60);
+      cap.style.width = totalW2 + 'px';
+      cap.innerHTML = `<div style="font-family:'Segoe UI',Arial,sans-serif;background:#fff">
+        ${html}
+        <div style="margin-top:14px">${chartHTML2}</div>
+      </div>`;
       await new Promise(r => setTimeout(r, 80));
 
       const canvas = await html2canvas(cap, {
-        scale: 1.8, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false
+        scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
+        windowWidth: totalW2, width: totalW2
       });
+      if (!canvas) { console.warn('html2canvas null, skip grupo'); continue; }
+
+      if (pagesAdded > 0) pdf.addPage('a3', 'l');
+      _addCoordPageHeader(pdf, logo, cursoLabel, cuatLabel, grupoLabel);
 
       const ratio  = canvas.width / canvas.height;
       const availW = PW - 16, availH = PH - 20;
       let iw = availW, ih = availW / ratio;
       if (ih > availH) { ih = availH; iw = availH * ratio; }
       const ox = (PW - iw) / 2;
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.90), 'JPEG', ox, 16, iw, ih);
-
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', ox, 16, iw, ih);
       pagesAdded++;
     }
 
@@ -6525,8 +7117,8 @@ async function exportCoordAllPDF() {
 
   } catch(e) {
     hidePdfOverlay();
-    alert('Error al generar PDF: ' + e.message);
-    console.error(e);
+    alert('Error al generar PDF: ' + (e && e.message ? e.message : String(e)));
+    console.error('exportCoordAllPDF error:', e);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }

@@ -1720,6 +1720,17 @@ def api_reload_fichas(_data):
 COORD_SYNC_TIPOS = {"LAB", "INF", "EXP"}
 
 
+
+def _get_coord_pesos(conn):
+    """Devuelve dict {nivel: valor} con los pesos de dedicación. Crea tabla si no existe."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS coord_pesos (
+        nivel TEXT PRIMARY KEY, valor REAL NOT NULL)""")
+    defaults = [('baja',0.1),('media',0.4),('alta',0.6),('muy_alta',0.9)]
+    for n,v in defaults:
+        conn.execute("INSERT OR IGNORE INTO coord_pesos(nivel,valor) VALUES(?,?)", (n,v))
+    rows = conn.execute("SELECT nivel, valor FROM coord_pesos").fetchall()
+    return {r["nivel"]: r["valor"] for r in rows}
+
 def _sync_coord_for_key(conn, grupo_key):
     """Re-sincroniza actividades automáticas (LAB/INF/EXP) en coordinacion_actividades.
     Llama a esta función con la conexión ya abierta tras cualquier INSERT/UPDATE/DELETE
@@ -1747,7 +1758,7 @@ def _sync_coord_for_key(conn, grupo_key):
     )
 
     clases = conn.execute("""
-        SELECT s.numero AS semana_num, cl.asignatura_id, cl.tipo, cl.subgrupo
+        SELECT s.numero AS semana_num, cl.asignatura_id, cl.tipo, cl.subgrupo, cl.dia
         FROM clases cl
         JOIN semanas s ON cl.semana_id = s.id
         WHERE s.grupo_id = ?
@@ -1761,19 +1772,25 @@ def _sync_coord_for_key(conn, grupo_key):
     for cl in clases:
         tipo     = cl["tipo"]
         subgrupo = (cl["subgrupo"] or "").strip()
+        dia      = cl["dia"] or None
         # LAB e INF: solo subgrupo principal
         if tipo in ("LAB", "INF"):
             if subgrupo and subgrupo != "1" and not subgrupo.endswith("-1"):
                 continue
-        key = (grupo_key, cl["semana_num"], cl["asignatura_id"], tipo)
+        key = (grupo_key, cl["semana_num"], cl["asignatura_id"], tipo, dia)
         if key in seen:
             continue
         seen.add(key)
+        pesos = _get_coord_pesos(conn)
+        if tipo in ("LAB", "INF"):
+            dedicacion = pesos.get("baja", 0.1)
+        else:  # EXP
+            dedicacion = pesos.get("alta", 0.6)
         conn.execute("""
             INSERT OR IGNORE INTO coordinacion_actividades
-                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts)
-            VALUES (?, ?, ?, ?, '', 1, ?)
-        """, (*key, ts))
+                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts, dia, dedicacion)
+            VALUES (?, ?, ?, ?, '', 1, ?, ?, ?)
+        """, (*key[:4], ts, dia, dedicacion))
 
 
 def api_get_coordinacion(params):
@@ -1792,13 +1809,22 @@ def api_get_coordinacion(params):
             grupo_key TEXT NOT NULL, semana_num INTEGER NOT NULL,
             asignatura_id INTEGER NOT NULL REFERENCES asignaturas(id) ON DELETE CASCADE,
             tipo_actividad TEXT NOT NULL, notas TEXT DEFAULT '',
-            sincronizado INTEGER DEFAULT 0, ts TEXT DEFAULT ''
+            sincronizado INTEGER DEFAULT 0, ts TEXT DEFAULT '',
+            dia TEXT DEFAULT NULL
         )
     """)
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
-        ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad)
+        ON coordinacion_actividades(
+            grupo_key, semana_num, asignatura_id, tipo_actividad, COALESCE(dia,'')
+        )
     """)
+    # Garantizar columnas dia/dedicacion en BDs antiguas
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(coordinacion_actividades)").fetchall()]
+    if "dia" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dia TEXT DEFAULT NULL")
+    if "dedicacion" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dedicacion REAL DEFAULT NULL")
     conn.commit()
     g = conn.execute(
         "SELECT id FROM grupos WHERE curso=? AND cuatrimestre=? AND grupo=?",
@@ -1827,11 +1853,18 @@ def api_get_coordinacion(params):
     """, (g["id"],)).fetchall()
 
     actividades = conn.execute("""
-        SELECT id, semana_num, asignatura_id, tipo_actividad, notas, sincronizado
+        SELECT id, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, dia, dedicacion
         FROM coordinacion_actividades
         WHERE grupo_key = ?
         ORDER BY semana_num, asignatura_id
     """, (grupo_key,)).fetchall()
+
+    no_lectivos = conn.execute("""
+        SELECT DISTINCT s.numero AS semana_num, cl.dia
+        FROM clases cl
+        JOIN semanas s ON cl.semana_id = s.id
+        WHERE s.grupo_id = ? AND cl.es_no_lectivo = 1
+    """, (g["id"],)).fetchall()
 
     conn.close()
     return {
@@ -1840,6 +1873,7 @@ def api_get_coordinacion(params):
         "semanas":     [dict(s) for s in semanas],
         "asignaturas": [dict(a) for a in asigs],
         "actividades": [dict(x) for x in actividades],
+        "no_lectivos": [dict(n) for n in no_lectivos],
     }
 
 
@@ -1851,6 +1885,11 @@ def api_set_coordinacion(data):
     asignatura_id = int(data.get("asignatura_id", 0))
     tipo          = data.get("tipo_actividad", "")
     notas         = data.get("notas", "")
+    dia           = data.get("dia", None) or None   # None = sin día concreto
+    dedicacion    = data.get("dedicacion", None)   # 0.1/0.4/0.6/0.9 o None
+    if dedicacion is not None:
+        try: dedicacion = float(dedicacion)
+        except: dedicacion = None
     action        = data.get("action", "add")   # "add" | "remove"
 
     VALID_TIPOS   = {"LAB", "INF", "SEM", "EXP", "EXF", "TE", "EO", "OA"}
@@ -1870,7 +1909,8 @@ def api_set_coordinacion(data):
     existing = conn.execute("""
         SELECT sincronizado FROM coordinacion_actividades
         WHERE grupo_key=? AND semana_num=? AND asignatura_id=? AND tipo_actividad=?
-    """, (grupo_key, semana_num, asignatura_id, tipo)).fetchone()
+          AND COALESCE(dia,'') = COALESCE(?,'')
+    """, (grupo_key, semana_num, asignatura_id, tipo, dia)).fetchone()
 
     if existing and existing["sincronizado"] == 1:
         conn.close()
@@ -1880,17 +1920,18 @@ def api_set_coordinacion(data):
         conn.execute("""
             DELETE FROM coordinacion_actividades
             WHERE grupo_key=? AND semana_num=? AND asignatura_id=? AND tipo_actividad=?
+              AND COALESCE(dia,'') = COALESCE(?,'')
               AND sincronizado = 0
-        """, (grupo_key, semana_num, asignatura_id, tipo))
+        """, (grupo_key, semana_num, asignatura_id, tipo, dia))
     else:
         conn.execute("""
             INSERT INTO coordinacion_actividades
-                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts)
-            VALUES (?, ?, ?, ?, ?, 0, ?)
-            ON CONFLICT(grupo_key, semana_num, asignatura_id, tipo_actividad)
-            DO UPDATE SET notas=excluded.notas, ts=excluded.ts
+                (grupo_key, semana_num, asignatura_id, tipo_actividad, notas, sincronizado, ts, dia, dedicacion)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+            ON CONFLICT(grupo_key, semana_num, asignatura_id, tipo_actividad, COALESCE(dia,''))
+            DO UPDATE SET notas=excluded.notas, ts=excluded.ts, dedicacion=excluded.dedicacion
             WHERE sincronizado = 0
-        """, (grupo_key, semana_num, asignatura_id, tipo, notas, ts))
+        """, (grupo_key, semana_num, asignatura_id, tipo, notas, ts, dia, dedicacion))
 
     conn.commit()
     conn.close()
@@ -1921,6 +1962,48 @@ def api_dtie_sync(_data):
     el log completo. Solo disponible si el grado tiene 'dtie: true' en config.json."""
     if not IS_DTIE:
         return {"ok": False, "error": "Este grado no es un DTIE."}
+def api_get_coord_pesos(_params):
+    """GET /api/coord/pesos — Devuelve los pesos de dedicación configurados."""
+    conn = get_db()
+    pesos = _get_coord_pesos(conn)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "pesos": pesos}
+
+def api_set_coord_pesos(data):
+    """POST /api/coord/pesos — Actualiza los pesos y re-sincroniza todas las actividades auto."""
+    niveles_validos = {"baja", "media", "alta", "muy_alta"}
+    updates = {}
+    for nivel in niveles_validos:
+        if nivel in data:
+            try:
+                v = float(data[nivel])
+                if 0 < v <= 10:
+                    updates[nivel] = v
+            except (ValueError, TypeError):
+                pass
+    if not updates:
+        return {"ok": False, "error": "No se recibieron pesos válidos"}
+
+    conn = get_db()
+    _get_coord_pesos(conn)  # garantizar tabla y defaults
+    for nivel, valor in updates.items():
+        conn.execute("UPDATE coord_pesos SET valor=? WHERE nivel=?", (valor, nivel))
+    conn.commit()
+
+    # Re-sincronizar todas las actividades auto para que usen los nuevos pesos
+    from datetime import datetime as _dt
+    pesos = _get_coord_pesos(conn)
+    conn.execute("""UPDATE coordinacion_actividades
+        SET dedicacion=? WHERE tipo_actividad IN ('LAB','INF') AND sincronizado=1""",
+        (pesos.get("baja", 0.1),))
+    conn.execute("""UPDATE coordinacion_actividades
+        SET dedicacion=? WHERE tipo_actividad='EXP' AND sincronizado=1""",
+        (pesos.get("alta", 0.6),))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "pesos": pesos}
+
 
     import subprocess as _sp
     sync_script = os.path.join(SCRIPT_DIR, "tools", "sync_dtie.py")
@@ -1980,9 +2063,12 @@ API_ROUTES = {
     "/api/sinc/exclusion/toggle":    ("POST", api_sinc_exclusion_toggle),
     "/api/fichas/reload":            ("POST", api_reload_fichas),
     "/api/dtie/sync":                ("POST", api_dtie_sync),
+
     "/api/coordinacion":             ("GET",  api_get_coordinacion),
     "/api/coordinacion/set":         ("POST", api_set_coordinacion),
     "/api/coordinacion/sync":        ("POST", api_sync_coordinacion),
+    "/api/coord/pesos":               ("GET",  api_get_coord_pesos),
+    "/api/coord/pesos/set":           ("POST", api_set_coord_pesos),
 }
 
 TEMPLATE_PATH = None  # Plantilla no requerida; el Excel se genera desde cero
