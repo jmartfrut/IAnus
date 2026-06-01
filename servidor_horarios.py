@@ -1962,6 +1962,33 @@ def api_dtie_sync(_data):
     el log completo. Solo disponible si el grado tiene 'dtie: true' en config.json."""
     if not IS_DTIE:
         return {"ok": False, "error": "Este grado no es un DTIE."}
+
+    import subprocess as _sp
+    sync_script = os.path.join(SCRIPT_DIR, "tools", "sync_dtie.py")
+
+    # Usar siempre la ruta del directorio del grado (relativa a SCRIPT_DIR)
+    # y la BD real sobre la que trabaja el servidor (puede ser /tmp/ cuando el
+    # launcher ha copiado la BD ahí). Sin --db, sync_dtie.py escribe en el
+    # fichero Dropbox original mientras el servidor sirve desde /tmp, con lo que
+    # los cambios no se ven y se pierden al cerrar el servidor (cp /tmp → Dropbox).
+    cmd = [sys.executable, sync_script, GRADO_DIR_REL, '--db', DB_PATH]
+    try:
+        result = _sp.run(
+            cmd,
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=180, cwd=SCRIPT_DIR
+        )
+        output = result.stdout or ""
+        if result.stderr and result.stderr.strip():
+            output += "\n--- stderr ---\n" + result.stderr
+        ok = result.returncode == 0
+        return {"ok": ok, "output": output, "lines": output.splitlines()}
+    except _sp.TimeoutExpired:
+        return {"ok": False, "error": "Tiempo de espera agotado (>180 s).", "lines": []}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "lines": []}
+
+
 def api_get_coord_pesos(_params):
     """GET /api/coord/pesos — Devuelve los pesos de dedicación configurados."""
     conn = get_db()
@@ -2003,32 +2030,6 @@ def api_set_coord_pesos(data):
     conn.commit()
     conn.close()
     return {"ok": True, "pesos": pesos}
-
-
-    import subprocess as _sp
-    sync_script = os.path.join(SCRIPT_DIR, "tools", "sync_dtie.py")
-
-    # Usar siempre la ruta del directorio del grado (relativa a SCRIPT_DIR)
-    # y la BD real sobre la que trabaja el servidor (puede ser /tmp/ cuando el
-    # launcher ha copiado la BD ahí). Sin --db, sync_dtie.py escribe en el
-    # fichero Dropbox original mientras el servidor sirve desde /tmp, con lo que
-    # los cambios no se ven y se pierden al cerrar el servidor (cp /tmp → Dropbox).
-    cmd = [sys.executable, sync_script, GRADO_DIR_REL, '--db', DB_PATH]
-    try:
-        result = _sp.run(
-            cmd,
-            capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=180, cwd=SCRIPT_DIR
-        )
-        output = result.stdout or ""
-        if result.stderr and result.stderr.strip():
-            output += "\n--- stderr ---\n" + result.stderr
-        ok = result.returncode == 0
-        return {"ok": ok, "output": output, "lines": output.splitlines()}
-    except _sp.TimeoutExpired:
-        return {"ok": False, "error": "Tiempo de espera agotado (>180 s).", "lines": []}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc), "lines": []}
 
 
 # ─── ROUTE MAP ───
