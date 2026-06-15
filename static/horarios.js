@@ -6151,6 +6151,8 @@ const COORD_DIAS = [
   { key: 'JUEVES',    lbl: 'J' },
   { key: 'VIERNES',   lbl: 'V' },
 ];
+// Sábado: solo se añade en semanas que tengan actividades ese día (ej. EXP en sábado)
+const COORD_DIA_SAB = { key: 'SÁBADO', lbl: 'S' };
 
 function renderCoordinacion() {
   const container = document.getElementById('view-coord');
@@ -6186,12 +6188,21 @@ function renderCoordinacion() {
   for (const act of actividadesVisibles)
     cargaSemana[act.semana_num] = (cargaSemana[act.semana_num] || 0) + 1;
 
+  // Semanas que tienen alguna actividad en sábado (para columna sábado dinámica)
+  const semanasConSabado = new Set(
+    actividades.filter(a => a.dia === 'SÁBADO').map(a => a.semana_num)
+  );
+  // Devuelve los días a renderizar para una semana (añade sábado solo si hay actividad)
+  const diasDeSemana = sem => semanasConSabado.has(sem.numero)
+    ? [...COORD_DIAS, COORD_DIA_SAB]
+    : COORD_DIAS;
+
   // Carga de dedicación acumulada por (asig, semana) para sparklines
   const dedAsigSem = new Map(); // asigId → [ded_sem0, ded_sem1, ...]
   for (const asig of asignaturas) {
     dedAsigSem.set(asig.id, semanas.map(sem => {
       let total = 0;
-      for (const d of COORD_DIAS) {
+      for (const d of diasDeSemana(sem)) {
         const kD = `${sem.numero}_${asig.id}_${d.key}`;
         const kN = `${sem.numero}_${asig.id}_`;
         for (const a of [...(actMap.get(kD)||[]), ...(actMap.get(kN)||[])]) {
@@ -6222,14 +6233,15 @@ function renderCoordinacion() {
              : carga >= COORD_WARN_THRESHOLD      ? 'background:#fde68a' : '';
     const tip = sem.descripcion + (carga ? ` (${carga} actividades)` : '');
     const rango = _fmtSemRango(sem.descripcion);
-    return `<th class="coord-sem-group-th" colspan="5" style="${bg}">S${sem.numero}<br><small class="coord-sem-rango">${rango}</small><span class="coord-tip">${_escHtml(tip)}</span></th>`;
+    const colspan = diasDeSemana(sem).length;
+    return `<th class="coord-sem-group-th" colspan="${colspan}" style="${bg}">S${sem.numero}<br><small class="coord-sem-rango">${rango}</small><span class="coord-tip">${_escHtml(tip)}</span></th>`;
   }).join('');
 
   // ── Cabecera fila 2: L M X J V con fecha D/M por semana ───────────────────
   const headDias = semanas.map(sem => {
     // Reutilizamos getWeekDayDates pasándole el objeto de semana con descripcion
     const dates = getWeekDayDates({ descripcion: sem.descripcion });
-    return COORD_DIAS.map(d => {
+    return diasDeSemana(sem).map(d => {
       const fecha = dates[d.key] || '';
       return `<th class="coord-dia-col-th" title="${d.key}">${d.lbl}</th>`;
     }).join('');
@@ -6239,7 +6251,7 @@ function renderCoordinacion() {
   const bodyRows = asignaturas.map(asig => {
     const colCls = getSubjectColor(asig.codigo);
     const cells = semanas.flatMap(sem => {
-      return COORD_DIAS.map(d => {
+      return diasDeSemana(sem).map(d => {
         // Actividades con día concreto
         const kDia  = `${sem.numero}_${asig.id}_${d.key}`;
         // Actividades sin día (dia=null, legacy o manuales sin día)
