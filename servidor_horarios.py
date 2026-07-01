@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 #   MAJOR → cambios de arquitectura o rotura de compatibilidad
 #   MINOR → funcionalidades nuevas (vistas, endpoints, herramientas)
 #   PATCH → correcciones y mejoras menores
-APP_VERSION = "1.40.6"
+APP_VERSION = "1.40.9"
 
 # ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
 # Carga config.json si existe; si no, usa valores por defecto (compatibilidad)
@@ -883,6 +883,25 @@ def _get_config_festivos_set():
             f = entry.get("fecha") if isinstance(entry, dict) else entry
             if f:
                 fechas.add(str(f).strip())
+    return fechas
+
+
+def _get_festivos_set():
+    """Devuelve el conjunto combinado de fechas festivas/no lectivas (config.json ∪
+    festivos_calendario) para marcarlas en gris en las exportaciones PDF (finales y
+    parciales). Un registro tipo='lectivo_override' en la BD fuerza ese día como
+    lectivo, con prioridad absoluta sobre config.json — igual criterio que usa el
+    calendario del frontend (ver vista Festivos en horarios.js)."""
+    fechas = _get_config_festivos_set()
+    conn = get_db()
+    try:
+        for r in conn.execute("SELECT fecha, tipo FROM festivos_calendario").fetchall():
+            if r["tipo"] == "lectivo_override":
+                fechas.discard(r["fecha"])
+            else:
+                fechas.add(r["fecha"])
+    finally:
+        conn.close()
     return fechas
 
 
@@ -1892,8 +1911,8 @@ def api_set_coordinacion(data):
         except: dedicacion = None
     action        = data.get("action", "add")   # "add" | "remove"
 
-    VALID_TIPOS   = {"LAB", "INF", "SEM", "EXP", "EXF", "TE", "EO", "OA"}
-    MANUAL_TIPOS  = {"SEM", "EXF", "TE", "EO", "OA"}   # los sync solo vienen del horario
+    VALID_TIPOS   = {"LAB", "INF", "SEM", "EXP", "EXF", "TE", "EO", "OA", "EA", "P"}
+    MANUAL_TIPOS  = {"SEM", "EXF", "TE", "EO", "OA", "EA", "P"}   # los sync solo vienen del horario
     if tipo not in VALID_TIPOS:
         return {"ok": False, "error": f"Tipo '{tipo}' no válido"}
     if tipo not in MANUAL_TIPOS:
@@ -2295,6 +2314,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+            fest_set = _get_festivos_set()
+
             periods_data = []
             for label, start, end in PERIODS:
                 rows = conn.execute(
@@ -2309,7 +2330,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
                     if not e.get('asig_codigo'):
                         e['asig_codigo'] = code_map.get(e.get('asig_nombre', ''), '')
                     exams.append(e)
-                periods_data.append({'label': label, 'start': start, 'end': end, 'exams': exams})
+                periods_data.append({'label': label, 'start': start, 'end': end,
+                                      'exams': exams, 'festivos': fest_set})
             conn.close()
 
             pdf_bytes = mod.generar_pdf_finales_all(periods_data, CURSO_LABEL, degree_name=DEGREE_NAME, degree_acronym=DEGREE_ACRONYM)
@@ -2439,7 +2461,8 @@ class HorarioHandler(http.server.BaseHTTPRequestHandler):
                 cuat_label = '1C + 2C'
 
             periodo_label = f"Exámenes Parciales — {cuat_label}"
-            periods_data = [{'label': periodo_label, 'start': start_iso, 'end': end_iso, 'exams': exams}]
+            periods_data = [{'label': periodo_label, 'start': start_iso, 'end': end_iso,
+                              'exams': exams, 'festivos': _get_festivos_set()}]
 
             pdf_bytes = mod.generar_pdf_finales_all(
                 periods_data, CURSO_LABEL,

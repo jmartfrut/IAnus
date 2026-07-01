@@ -25,11 +25,13 @@ const COORD_TIPOS = [
   { codigo:'TE',  desc:'Trabajo escrito / memoria',      color:'#e65100', sync:false },
   { codigo:'EO',  desc:'Exposición oral',                color:'#4e342e', sync:false },
   { codigo:'OA',  desc:'Otra actividad evaluable',       color:'#37474f', sync:false },
+  { codigo:'EA',  desc:'Ejercicio evaluable en aula',    color:'#00695c', sync:false },
+  { codigo:'P',   desc:'Examen de prácticas',            color:'#0277bd', sync:false },
 ];
 const COORD_WARN_THRESHOLD     = 2;   // naranja
 
 // Etiquetas cortas para los badges de la tabla de coordinación (ahorra espacio)
-const COORD_LBL = { INF:'I', LAB:'L', EXP:'E', SEM:'S', TE:'T', EXF:'EXF', EO:'EO', OA:'OA' };
+const COORD_LBL = { INF:'I', LAB:'L', EXP:'E', SEM:'S', TE:'T', EXF:'EXF', EO:'EO', OA:'OA', EA:'EA', P:'P' };
 
 // Niveles de dedicación: valor numérico → {lbl, color}
 // Los valores (val) se actualizan desde la BD vía loadCoordinacion()
@@ -3076,6 +3078,110 @@ function renderEvolucionSection() {
   container.innerHTML = buildTeoriaComparativaSection() + (html || '');
 }
 
+// ─── RESUMEN DESTACADAS ───────────────────────────────────────────────────────
+
+function renderDestacadasResumen() {
+  const el = document.getElementById('destacadasResumen');
+  if (!el) return;
+
+  const prefix = currentCurso + '_' + currentCuat + '_grupo_';
+
+  // Mapa codigo → {nombre, curso, cuatrimestre}
+  const asigInfo = {};
+  (DB.asignaturas || []).forEach(a => {
+    asigInfo[a.codigo] = { nombre: a.nombre, curso: String(a.curso), cuatrimestre: a.cuatrimestre };
+  });
+
+  // Etiqueta legible para act_type (formato almacenado: "teoria", "lab", "info")
+  const actLabel = { teoria: 'Teoría (AF1)', lab: 'Lab (AF2)', info: 'Info (AF4)' };
+
+  // Agrupar entradas: filtrar por si la asignatura tiene clases en el grupo actual
+  const porGrupo = {};  // grupo_num → [ {codigo, act_type, subgrupo, modo} ]
+  for (const [key, modo] of DB._destacadasMap.entries()) {
+    const parts = key.split('::');
+    if (parts.length < 4) continue;
+    const [codigo, grupo_num, act_type, subgrupo] = parts;
+    // El grupo debe existir en el cuatrimestre activo
+    const g = DB.grupos[prefix + grupo_num];
+    if (!g) continue;
+    // La asignatura debe tener clases en ese grupo
+    const tieneClases = g.semanas.some(s => s.clases.some(c => c.asig_codigo === codigo));
+    if (!tieneClases) continue;
+    if (!porGrupo[grupo_num]) porGrupo[grupo_num] = [];
+    porGrupo[grupo_num].push({ codigo, act_type, subgrupo, modo });
+  }
+
+  const groupKeys = Object.keys(porGrupo).sort();
+
+  if (groupKeys.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  let html = `<div style="margin-top:32px;padding:0 4px">
+    <h3 style="font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:14px;
+               border-bottom:2px solid var(--primary);padding-bottom:6px">
+      &#11088; Resumen de asignaturas destacadas &mdash; ${currentCurso}\u00BA curso, ${currentCuat}
+    </h3>`;
+
+  groupKeys.forEach(gKey => {
+    const fullKey = prefix + gKey;
+    const g = DB.grupos[fullKey];
+    const groupLabel = g ? 'Grupo ' + g.grupo : 'Grupo ' + gKey;
+    const entradas = porGrupo[gKey];
+
+    // Agrupar por codigo
+    const porCodigo = {};
+    entradas.forEach(({ codigo, act_type, subgrupo, modo }) => {
+      if (!porCodigo[codigo]) porCodigo[codigo] = [];
+      porCodigo[codigo].push({ act_type, subgrupo, modo });
+    });
+
+    html += `<div style="margin-bottom:20px">
+      <div style="font-weight:700;font-size:.9rem;color:var(--text);margin-bottom:8px;
+                  padding:6px 12px;background:var(--bg-card);border-radius:6px;
+                  border-left:4px solid var(--accent)">
+        ${groupLabel}
+        <span style="font-weight:400;color:var(--text-light);font-size:.8rem;margin-left:8px">
+          ${Object.keys(porCodigo).length} asignatura(s)
+        </span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead>
+          <tr style="background:var(--bg-card);color:var(--text-light)">
+            <th style="text-align:left;padding:5px 10px;border-bottom:1px solid var(--border)">C\u00F3digo</th>
+            <th style="text-align:left;padding:5px 10px;border-bottom:1px solid var(--border)">Asignatura</th>
+            <th style="text-align:left;padding:5px 10px;border-bottom:1px solid var(--border)">Tipo actividad</th>
+            <th style="text-align:left;padding:5px 10px;border-bottom:1px solid var(--border)">Subgrupo</th>
+            <th style="text-align:left;padding:5px 10px;border-bottom:1px solid var(--border)">Modo</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    Object.entries(porCodigo).sort(([a],[b]) => a.localeCompare(b)).forEach(([codigo, acts]) => {
+      const nombre = (asigInfo[codigo] && asigInfo[codigo].nombre) || '\u2014';
+      acts.sort((a,b) => (a.act_type + a.subgrupo).localeCompare(b.act_type + b.subgrupo)).forEach(({ act_type, subgrupo, modo }, i) => {
+        const badgeModo = modo === 2
+          ? `<span style="font-size:.72rem;background:#f3f4f6;color:var(--text-light);padding:1px 7px;border-radius:10px;border:1px solid var(--border)">Solo badge</span>`
+          : `<span style="font-size:.72rem;background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:10px;border:1px solid #fde047">Color + badge</span>`;
+        html += `<tr style="border-bottom:1px solid var(--border)">
+          ${i === 0 ? `<td style="padding:5px 10px;vertical-align:top;font-family:monospace">${codigo}</td>
+                       <td style="padding:5px 10px;vertical-align:top">${nombre}</td>` 
+                   : `<td style="padding:5px 10px"></td><td style="padding:5px 10px"></td>`}
+          <td style="padding:5px 10px">${actLabel[act_type] || act_type}</td>
+          <td style="padding:5px 10px;color:var(--text-light)">${subgrupo || '<em>todos</em>'}</td>
+          <td style="padding:5px 10px">${badgeModo}</td>
+        </tr>`;
+      });
+    });
+
+    html += `</tbody></table></div>`;
+  });
+
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
 // ─── ESTADÍSTICAS ─────────────────────────────────────────────────────────────
 
 function renderStats() {
@@ -3171,6 +3277,7 @@ function renderStats() {
     sectionsHtml || '<div style="padding:20px;color:var(--text-light)">Sin datos para este cuatrimestre.</div>';
 
   renderEvolucionSection();
+  renderDestacadasResumen();
 }
 
 // ─── NAVIGATION ───
@@ -6171,6 +6278,7 @@ function renderCoordinacion() {
 
   // Inicializar filtro de tipos visible (todos activos por defecto)
   if (!coordTiposVisible) coordTiposVisible = new Set(COORD_TIPOS.map(t => t.codigo));
+  else COORD_TIPOS.forEach(t => coordTiposVisible.add(t.codigo)); // nuevos tipos siempre visibles
 
   // Actividades visibles según filtro activo
   const actividadesVisibles = actividades.filter(a => coordTiposVisible.has(a.tipo_actividad));
@@ -6818,28 +6926,38 @@ function _buildCoordCaptureHTML(coordData, semanasSlice, compact) {
     ? Math.min(Math.max(Math.round(maxChars * 4) + 10, 90), 150)
     : Math.min(Math.max(Math.round(maxChars * 5) + 16, 110), 190);
   const DAY_W = compact ? 11 : 16;   // px por columna de día
-  const containerWidth = COL_ASIG_W + semanas.length * 5 * DAY_W + 52; // +32px padding box-sizing del cap
 
-  // Cabecera fila 1: semanas (colspan=5)
+  // Sábado: columna extra solo en semanas con actividad ese día
+  const sabadoSems = new Set(actividades.filter(a => a.dia === 'SÁBADO').map(a => a.semana_num));
+  const DIAS_BASE_PDF = [
+    {key:'LUNES',lbl:'L'},{key:'MARTES',lbl:'M'},{key:'MIÉRCOLES',lbl:'X'},
+    {key:'JUEVES',lbl:'J'},{key:'VIERNES',lbl:'V'}
+  ];
+  const DIAS_SAB_PDF  = {key:'SÁBADO', lbl:'S'};
+  const diasPorSem = sem => sabadoSems.has(sem.numero)
+    ? [...DIAS_BASE_PDF, DIAS_SAB_PDF] : DIAS_BASE_PDF;
+
+  const totalDiasCols = semanas.reduce((s, sem) => s + diasPorSem(sem).length, 0);
+  const containerWidth = COL_ASIG_W + totalDiasCols * DAY_W + 52;
+
+  // Cabecera fila 1: semanas (colspan dinámico según sábado)
   const headSems = semanas.map(sem => {
     const carga = cargaSemana[sem.numero]||0;
     const bg = carga >= COORD_OVERLOAD_THRESHOLD ? '#fca5a5'
              : carga >= COORD_WARN_THRESHOLD      ? '#fde68a' : '#e8eaf6';
     const rango = _fmtSemRango(sem.descripcion);
-    return `<th colspan="5" style="background:${bg};font-size:8px;padding:2px 1px;text-align:center;
+    const colspan = diasPorSem(sem).length;
+    return `<th colspan="${colspan}" style="background:${bg};font-size:8px;padding:2px 1px;text-align:center;
               border:1px solid #bbb;font-weight:700;color:#1a237e;border-right:2px solid #999;line-height:1.3">
               S${sem.numero}<br><span style="font-size:6.5px;font-weight:400;color:#444">${rango}</span></th>`;
   }).join('');
 
-  // Cabecera fila 2: L M X J V con fecha
-  const DIAS_PDF = [
-    {key:'LUNES',lbl:'L'},{key:'MARTES',lbl:'M'},{key:'MIÉRCOLES',lbl:'X'},
-    {key:'JUEVES',lbl:'J'},{key:'VIERNES',lbl:'V'}
-  ];
+  // Cabecera fila 2: L M X J V [S] con fecha
   const headDias = semanas.map(sem => {
     const dates = getWeekDayDates({ descripcion: sem.descripcion });
-    return DIAS_PDF.map((d,i) => {
-      const rb = i===4 ? '2px solid #999' : '1px solid #ddd';
+    const dias = diasPorSem(sem);
+    return dias.map((d,i) => {
+      const rb = i===dias.length-1 ? '2px solid #999' : '1px solid #ddd';
       return `<th style="width:${DAY_W}px;min-width:${DAY_W}px;font-size:7px;padding:2px 1px;
                 text-align:center;border:1px solid #ddd;border-right:${rb};
                 color:#555;font-weight:600">${d.lbl}</th>`;
@@ -6848,8 +6966,9 @@ function _buildCoordCaptureHTML(coordData, semanasSlice, compact) {
 
   // Filas de asignaturas
   const bodyRows = asignaturas.map(asig => {
-    const cells = semanas.flatMap(sem =>
-      DIAS_PDF.map((d,i) => {
+    const cells = semanas.flatMap(sem => {
+      const dias = diasPorSem(sem);
+      return dias.map((d,i) => {
         const kDia  = `${sem.numero}_${asig.id}_${d.key}`;
         const kNull = `${sem.numero}_${asig.id}_`;
         const acts  = [...(actMap.get(kDia)||[]), ...(actMap.get(kNull)||[])];
@@ -6864,12 +6983,12 @@ function _buildCoordCaptureHTML(coordData, semanasSlice, compact) {
                     font-weight:700;padding:1px 2px;border-radius:2px;margin:0;line-height:1.3">
                     ${slbl}</span>`;
         }).join('');
-        const rb = i===4 ? '2px solid #999' : '1px solid #ddd';
+        const rb = i===dias.length-1 ? '2px solid #999' : '1px solid #ddd';
         return `<td style="border:1px solid #eee;border-right:${rb};padding:1px;
                   background:${cellBg};vertical-align:middle;text-align:center;
                   width:${DAY_W}px;min-width:${DAY_W}px;max-width:${DAY_W}px">${badges}</td>`;
-      })
-    ).join('');
+      });
+    }).join('');
     const short = asig.nombre.length > 26 ? asig.nombre.substring(0,24)+'…' : asig.nombre;
     return `<tr>
       <td style="border:1px solid #ddd;border-right:2px solid #bbb;padding:3px 5px;

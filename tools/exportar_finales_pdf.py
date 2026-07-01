@@ -34,32 +34,19 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
 from reportlab.platypus.flowables import Flowable
 from datetime import date, timedelta
-import io, os as _os, subprocess as _sp
+import io, os as _os
 
-# ── Logo UPCT/GIM ─────────────────────────────────────────────────────────────
-_SCRIPT_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))  # raíz del proyecto
-_LOGO_PDF   = _os.path.join(_SCRIPT_DIR, 'docs', 'logo.pdf')
-_LOGO_PNG   = _os.path.join(_SCRIPT_DIR, 'docs', 'logo_upct.png')
-_LOGO_RATIO = 1528.08 / 181.707   # ancho:alto del PDF original
+# ── Logos institucionales ──────────────────────────────────────────────────────
+_SCRIPT_DIR  = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))  # raíz del proyecto
+_LOGOS_PNG   = _os.path.join(_SCRIPT_DIR, 'docs', 'logosback.png')   # p1 portrait (fondo azul)
+_LOGOS_RATIO = 2170 / 725   # ancho:alto de logosback.png
+_LOGOW_PNG   = _os.path.join(_SCRIPT_DIR, 'docs', 'logow.png')       # p2 landscape (fondo transp.)
+_LOGOW_RATIO = 5226 / 630   # ancho:alto de logow.png
+_LOGO_OK     = _os.path.exists(_LOGOS_PNG)
+_LOGOW_OK    = _os.path.exists(_LOGOW_PNG)
 
-def _ensure_logo():
-    """Convierte logo.pdf → logo_upct.png (una sola vez) usando pdftoppm."""
-    if _os.path.exists(_LOGO_PNG):
-        return True
-    if not _os.path.exists(_LOGO_PDF):
-        return False
-    try:
-        prefix = _LOGO_PNG[:-4]   # sin .png
-        _sp.run(['pdftoppm', '-r', '150', '-png', '-singlefile', _LOGO_PDF, prefix],
-                capture_output=True, timeout=15)
-        return _os.path.exists(_LOGO_PNG)
-    except Exception:
-        return False
-
-_LOGO_OK = _ensure_logo()
-
-# ── Paleta de colores (del PDF original) ────────────────────────────────────
-C_TITLE_BG   = colors.HexColor('#1e3a5f')   # azul marino encabezado
+# ── Paleta de colores ────────────────────────────────────────────────────────
+C_TITLE_BG   = colors.HexColor('#012669')   # azul UPCT oficial
 C_TITLE_FG   = colors.white
 C_HEAD_BG    = colors.HexColor('#2d5faa')   # azul medio columnas
 C_HEAD_FG    = colors.white
@@ -67,12 +54,12 @@ C_ROW_ALT    = colors.HexColor('#eef3fb')   # fila alternada
 C_ROW_NORM   = colors.white
 C_BORDER     = colors.HexColor('#9bb3d4')
 C_WEEK_BG    = colors.HexColor('#d6e4f7')   # fondo semana/fecha
-C_WEEK_FG    = colors.HexColor('#1e3a5f')
+C_WEEK_FG    = colors.HexColor('#012669')
 C_COURSE_BG  = colors.HexColor('#e8f0fb')   # fondo columna curso
 C_EXAM_BG    = colors.white
 C_EXAM_M     = colors.HexColor('#1e40af')   # azul mañana
-C_EXAM_T     = colors.HexColor('#7c3aed')   # morado tarde
-C_SIDE_BG    = colors.HexColor('#1e3a5f')   # lateral rotado
+C_EXAM_T     = colors.HexColor('#c2410c')   # naranja cálido tarde
+C_SIDE_BG    = colors.HexColor('#012669')   # lateral rotado
 C_EMPTY      = colors.HexColor('#f8fafd')
 
 DIAS_ES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -157,11 +144,11 @@ def _portrait_table(exams, titulo, subtitulo):
     styles = getSampleStyleSheet()
 
     sTitle = ParagraphStyle('sTitle', parent=styles['Normal'],
-                            fontSize=13, fontName='Helvetica-Bold',
+                            fontSize=10, fontName='Helvetica-Bold',
                             textColor=C_TITLE_FG, alignment=1,
                             spaceAfter=0)
     sSub   = ParagraphStyle('sSub', parent=styles['Normal'],
-                            fontSize=13, fontName='Helvetica-Bold',
+                            fontSize=10, fontName='Helvetica-Bold',
                             textColor=C_TITLE_FG, alignment=1)
     sHead  = ParagraphStyle('sHead', parent=styles['Normal'],
                             fontSize=8.5, fontName='Helvetica-Bold',
@@ -175,22 +162,22 @@ def _portrait_table(exams, titulo, subtitulo):
     sCellT = ParagraphStyle('sCellT', parent=sCell,
                             textColor=C_EXAM_T, alignment=1)
 
-    # Cabecera institucional con logo
+    # Cabecera institucional con logos
     from reportlab.platypus import Image as _RLImage
     TOTAL_W = 170*mm
 
     if _LOGO_OK:
-        logo_h_pt  = 14*mm                           # altura logo en cabecera
-        logo_w_pt  = min(logo_h_pt * _LOGO_RATIO, 95*mm)
-        logo_h_pt  = logo_w_pt / _LOGO_RATIO
-        logo_cell  = _RLImage(_LOGO_PNG, width=logo_w_pt, height=logo_h_pt)
+        logo_h_pt  = 26*mm                              # altura logo en cabecera
+        logo_w_pt  = min(logo_h_pt * _LOGOS_RATIO, 95*mm)
+        logo_h_pt  = logo_w_pt / _LOGOS_RATIO
+        logo_cell  = _RLImage(_LOGOS_PNG, width=logo_w_pt, height=logo_h_pt)
         title_w    = TOTAL_W - logo_w_pt - 4*mm
         header_table = Table([[Paragraph(titulo, sTitle), logo_cell]],
                               colWidths=[title_w, logo_w_pt + 4*mm])
         header_table.setStyle(TableStyle([
             ('BACKGROUND',    (0,0), (-1,-1), C_TITLE_BG),
-            ('TOPPADDING',    (0,0), (-1,-1), 7),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING',    (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
             ('LEFTPADDING',   (0,0), (0,-1),  10),
             ('LEFTPADDING',   (1,0), (1,-1),  4),
             ('RIGHTPADDING',  (1,0), (1,-1),  8),
@@ -209,8 +196,8 @@ def _portrait_table(exams, titulo, subtitulo):
     sub_table = Table([[Paragraph(subtitulo, sSub)]], colWidths=[TOTAL_W])
     sub_table.setStyle(TableStyle([
         ('BACKGROUND',    (0,0), (-1,-1), C_TITLE_BG),
-        ('TOPPADDING',    (0,0), (-1,-1), 2),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING',    (0,0), (-1,-1), 1),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ('LEFTPADDING',   (0,0), (-1,-1), 10),
     ]))
 
@@ -280,7 +267,7 @@ def _portrait_table(exams, titulo, subtitulo):
 
     data_table = Table(rows, colWidths=col_w, repeatRows=1)
     ts = [
-        ('BACKGROUND',    (0,0), (-1,0),  C_HEAD_BG),
+        ('BACKGROUND',    (0,0), (-1,0),  C_TITLE_BG),
         ('TEXTCOLOR',     (0,0), (-1,0),  C_HEAD_FG),
         ('GRID',          (0,0), (-1,-1), 0.4, C_BORDER),
         ('ROWBACKGROUNDS',(0,1), (-1,-1), [C_ROW_NORM, C_ROW_ALT]),
@@ -307,14 +294,17 @@ def _on_portrait_page(canv, doc):
 
 # ── Página 2: calendario landscape ──────────────────────────────────────────
 def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_h,
-                                start_date=None, end_date=None):
+                                start_date=None, end_date=None, festivos=None):
     """
     Dibuja directamente en el canvas el calendario landscape.
     Layout (igual al PDF original):
       [lateral rotado | semana | curso | Lun | Mar | Mié | Jue | Vie | Sáb]
     start_date / end_date: date objects; días fuera de este rango se muestran en gris.
+    festivos: colección opcional de fechas ISO ('YYYY-MM-DD') que se muestran en
+              gris igual que los días fuera de período (festivos/no lectivos).
     """
-    C_OUT_OF_PERIOD = colors.HexColor('#e8e8e8')  # gris para días fuera del período
+    C_OUT_OF_PERIOD = colors.HexColor('#e8e8e8')  # gris para días fuera del período o festivos
+    fest_set = set(festivos) if festivos else set()
     M = 8   # margen exterior (pt)
     LW = 18 # ancho columna lateral rotada
     SW = 18 # ancho columna semana
@@ -333,18 +323,21 @@ def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_
 
     x0 = M  # start x (necesario antes del logo)
 
-    # Logo grande y centrado sobre el calendario
-    content_x  = x0 + LW          # inicio del área de contenido (tras lateral)
-    content_w  = page_w - M - content_x   # ancho del área de contenido
+    # Logo centrado sobre el calendario (logow.png — fondo transparente)
+    content_x    = x0 + LW          # inicio del área de contenido (tras lateral)
+    content_w    = page_w - M - content_x
     logo_reserve = 0
-    if _LOGO_OK:
-        lw_logo = content_w * 0.55                    # 55% del ancho de contenido
-        lh_logo = lw_logo / _LOGO_RATIO
-        logo_x  = content_x + (content_w - lw_logo) / 2   # centrado
+    if _LOGOW_OK:
+        lh_logo = 15 * mm                                     # altura fija para logow
+        lw_logo = lh_logo * _LOGOW_RATIO
+        if lw_logo > content_w * 0.9:                        # no superar el 90% del área
+            lw_logo = content_w * 0.9
+            lh_logo = lw_logo / _LOGOW_RATIO
+        logo_x  = content_x + (content_w - lw_logo) / 2     # centrado
         logo_y  = page_h - M - lh_logo
-        c.drawImage(_LOGO_PNG, logo_x, logo_y, lw_logo, lh_logo,
+        c.drawImage(_LOGOW_PNG, logo_x, logo_y, lw_logo, lh_logo,
                     preserveAspectRatio=True, mask='auto')
-        logo_reserve = lh_logo + 4   # espacio que el logo ocupa (+ gap)
+        logo_reserve = lh_logo + 4
 
     # Altura total disponible (respetando logo arriba y leyenda abajo)
     avail_h = page_h - 2*M - logo_reserve - LEGEND_H - LEGEND_GAP
@@ -415,11 +408,13 @@ def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_
         for di, day in enumerate(week):
             in_period = (start_date is None or day >= start_date) and \
                         (end_date   is None or day <= end_date)
+            iso_str = day.strftime('%Y-%m-%d')
+            blocked = (not in_period) or (iso_str in fest_set)
             dx = x0 + LW + SW + CW + di * DW
-            if not in_period:
+            if blocked:
                 c.setFillColor(C_OUT_OF_PERIOD)
                 c.rect(dx, y - fecha_h, DW, fecha_h, fill=1, stroke=0)
-            c.setFillColor(C_WEEK_FG if in_period else colors.HexColor('#aaaaaa'))
+            c.setFillColor(colors.HexColor('#aaaaaa') if blocked else C_WEEK_FG)
             c.drawCentredString(dx + DW/2, y - fecha_h/2 - 2.5, _fmt_date_short(day))
 
         c.setStrokeColor(C_BORDER)
@@ -437,11 +432,12 @@ def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_
             c.rect(x0 + LW + SW, y - course_h, page_w - 2*M - LW - SW, course_h,
                    fill=1, stroke=0)
 
-            # Cubrir con gris los días fuera del período en esta fila de curso
+            # Cubrir con gris los días fuera del período o festivos en esta fila de curso
             for di, day in enumerate(week):
                 in_period = (start_date is None or day >= start_date) and \
                             (end_date   is None or day <= end_date)
-                if not in_period:
+                iso_day = day.strftime('%Y-%m-%d')
+                if (not in_period) or (iso_day in fest_set):
                     dx = x0 + LW + SW + CW + di * DW
                     c.setFillColor(C_OUT_OF_PERIOD)
                     c.rect(dx, y - course_h, DW, course_h, fill=1, stroke=0)
@@ -461,7 +457,7 @@ def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_
                             (end_date   is None or day <= end_date)
                 iso_str = day.strftime('%Y-%m-%d')
                 cell_info = exam_idx.get(iso_str, {}).get(curso)
-                if cell_info and in_period:
+                if cell_info and in_period and iso_str not in fest_set:
                     nom, turno = cell_info
                     dx = x0 + LW + SW + CW + di * DW
                     fg = C_EXAM_M if turno == 'mañana' else C_EXAM_T
@@ -554,30 +550,32 @@ def _landscape_calendar_canvas(c, exam_idx, weeks, titulo_lateral, page_w, page_
 
 
 # ── Función principal ────────────────────────────────────────────────────────
-def generar_pdf_finales(exams, periodo_label_plain, curso_label, start_iso, end_iso):
+def generar_pdf_finales(exams, periodo_label_plain, curso_label, start_iso, end_iso, festivos=None):
     """
     exams            : lista de dicts (fecha, asig_nombre, asig_codigo, curso, turno, observacion)
     periodo_label_plain : str, ej. 'Enero - 1er Cuatrimestre'
     curso_label      : str, ej. '2025-2026'
     start_iso / end_iso: rango del período
+    festivos         : colección opcional de fechas ISO ('YYYY-MM-DD') a marcar en gris
 
     Genera 2 páginas (portrait lista + landscape calendario) para UN período.
     Para un PDF con los 3 períodos usa generar_pdf_finales_all().
     """
     return generar_pdf_finales_all(
         [{'label': periodo_label_plain, 'start': start_iso,
-          'end': end_iso, 'exams': exams}],
+          'end': end_iso, 'exams': exams, 'festivos': festivos}],
         curso_label,
     )
 
 
-def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ingeniería Mecánica", degree_acronym="GIM", titulo_prefix="Fechas Exámenes Finales", lat_title_prefix="EXÁMENES FINALES"):
+def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ingeniería Mecánica", degree_acronym="GIM", titulo_prefix="Exámenes Finales", lat_title_prefix="EXÁMENES FINALES"):
     """
     periods_data : lista de dicts con claves:
-        label  — str, ej. 'Enero - 1er Cuatrimestre'
-        start  — str ISO, inicio del período
-        end    — str ISO, fin del período
-        exams  — lista de dicts de exámenes
+        label     — str, ej. 'Enero - 1er Cuatrimestre'
+        start     — str ISO, inicio del período
+        end       — str ISO, fin del período
+        exams     — lista de dicts de exámenes
+        festivos  — (opcional) colección de fechas ISO a marcar en gris en el calendario
     curso_label  : str, ej. '2025-2026'
 
     Genera un PDF con 2 páginas por período (portrait + landscape),
@@ -590,7 +588,7 @@ def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ing
 
     # ── PageTemplates reutilizables ──
     portrait_frame = Frame(
-        15*mm, 10*mm, pw_p - 30*mm, ph_p - 20*mm,
+        15*mm, 10*mm, pw_p - 30*mm, ph_p - 15*mm,
         id='portrait', leftPadding=0, bottomPadding=0,
         rightPadding=0, topPadding=0,
     )
@@ -611,26 +609,27 @@ def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ing
         pageTemplates=[portrait_tpl, landscape_tpl],
         title=first_titulo,
         leftMargin=15*mm, rightMargin=15*mm,
-        topMargin=10*mm,  bottomMargin=10*mm,
+        topMargin=5*mm,   bottomMargin=10*mm,
     )
 
-    def _make_landscape_flowable(ei, wk, lt, sd, ed):
-        """Cierra sobre exam_idx, weeks, lat_title y fechas límite del período concreto."""
+    def _make_landscape_flowable(ei, wk, lt, sd, ed, fest):
+        """Cierra sobre exam_idx, weeks, lat_title, fechas límite y festivos del período concreto."""
         class _Cal(Flowable):
             def wrap(self, aw, ah): return aw, ah
             def draw(self):
                 _landscape_calendar_canvas(self.canv, ei, wk, lt, pw_l, ph_l,
-                                           start_date=sd, end_date=ed)
+                                           start_date=sd, end_date=ed, festivos=fest)
         return _Cal()
 
     story = []
     for i, p in enumerate(periods_data):
-        titulo    = f"{titulo_prefix} - {p['label']} - Curso {curso_label}"
+        titulo    = f"{titulo_prefix} - {p['label']}<br/>Curso {curso_label}"
         lat_title = f"{lat_title_prefix} - {p['label'].upper()} - {degree_acronym} - {curso_label}"
         exam_idx  = _build_exam_index(p['exams'])
         weeks     = _get_weeks(p['start'], p['end'])
         sd        = _iso_to_date(p['start'])
         ed        = _iso_to_date(p['end'])
+        fest      = p.get('festivos')
 
         if i > 0:
             story.append(NextPageTemplate('portrait'))
@@ -638,7 +637,7 @@ def generar_pdf_finales_all(periods_data, curso_label, degree_name="Grado en Ing
         story += _portrait_table(p['exams'], titulo, subtitulo)
         story.append(NextPageTemplate('landscape'))
         story.append(PageBreak())
-        story.append(_make_landscape_flowable(exam_idx, weeks, lat_title, sd, ed))
+        story.append(_make_landscape_flowable(exam_idx, weeks, lat_title, sd, ed, fest))
 
     doc.build(story)
     return buf.getvalue()
@@ -667,11 +666,22 @@ if __name__ == '__main__':
         "SELECT * FROM examenes_finales WHERE fecha >= ? AND fecha <= ? ORDER BY fecha, curso",
         (start, end)
     ).fetchall()
-    conn.close()
     exams = [dict(r) for r in rows]
 
-    print(f"Generando PDF: {len(exams)} exámenes del período '{label}'")
-    pdf_bytes = generar_pdf_finales(exams, label, curso_label, start, end)
+    # Festivos/no lectivos de la BD (para pruebas rápidas de las celdas en gris del calendario)
+    festivos = set()
+    try:
+        for r in conn.execute("SELECT fecha, tipo FROM festivos_calendario").fetchall():
+            if r['tipo'] == 'lectivo_override':
+                festivos.discard(r['fecha'])
+            else:
+                festivos.add(r['fecha'])
+    except sqlite3.OperationalError:
+        pass  # tabla festivos_calendario aún no existe en esta BD
+    conn.close()
+
+    print(f"Generando PDF: {len(exams)} exámenes del período '{label}' ({len(festivos)} festivos)")
+    pdf_bytes = generar_pdf_finales(exams, label, curso_label, start, end, festivos=festivos)
 
     import tempfile, pathlib
     out = str(pathlib.Path(tempfile.gettempdir()) / f'finales_test_{periodo}.pdf')
