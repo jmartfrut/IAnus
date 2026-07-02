@@ -33,6 +33,7 @@ import json
 import shutil
 import sqlite3
 import sys
+import unicodedata
 import tempfile
 from pathlib import Path
 
@@ -585,6 +586,14 @@ def sync_clases(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=False):
 # Sincronización de exámenes finales
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _norm_nombre(s):
+    """Normaliza un nombre de asignatura para comparaciones tolerantes:
+    mayúsculas, sin acentos, sin puntos y con espacios colapsados."""
+    s = unicodedata.normalize('NFD', s or '')
+    s = ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+    return ' '.join(s.upper().replace('.', ' ').split())
+
+
 def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=False):
     """
     Para cada asignatura del CSV:
@@ -592,6 +601,15 @@ def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=Fals
       2. Reinsertar desde la BD fuente, sin distinción de subgrupo.
          El curso asignado es el de la columna 'curso_dtie' del CSV,
          no el curso en el grado origen.
+
+    Detalles:
+      - Los exámenes de origen se localizan por asig_codigo y, además, los
+        exámenes SIN código (creados a mano en la vista Finales) se emparejan
+        por nombre normalizado contra la tabla asignaturas del grado origen.
+      - El asig_nombre insertado se toma de la tabla asignaturas del DTIE
+        (lookup por código) para que el checklist de la vista Finales pueda
+        marcar el examen como registrado (✓). Si no existe, se usa el nombre
+        del CSV.
 
     Adapta dinámicamente las columnas según el esquema de cada BD
     (compatible con el esquema documentado en TECHNICAL.md y con el
@@ -606,6 +624,36 @@ def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=Fals
     dtie_ef_cols = get_table_columns(dtie_conn, 'examenes_finales')
     total_copiados = 0
     total_borrados = 0
+
+    # Nombres del DTIE por código (para insertar el nombre que usa el checklist)
+    dtie_nombres = {}
+    if table_exists(dtie_conn, 'asignaturas'):
+        dtie_nombres = {
+            str(r[0]): r[1]
+            for r in dtie_conn.execute("SELECT codigo, nombre FROM asignaturas")
+        }
+
+    # Caches por grado origen:
+    #   nombre_norm : codigo -> nombre normalizado (tabla asignaturas origen)
+    #   sin_codigo  : nombre normalizado -> [tuplas de cols_opcionales, ...]
+    #                 (exámenes de origen sin asig_codigo)
+    src_cache = {}
+
+    def _get_src_cache(siglas, conn, cols_opcionales):
+        if siglas in src_cache:
+            return src_cache[siglas]
+        nombre_norm = {}
+        if table_exists(conn, 'asignaturas'):
+            for cod, nom in conn.execute("SELECT codigo, nombre FROM asignaturas"):
+                nombre_norm[str(cod)] = _norm_nombre(nom)
+        sin_codigo = {}
+        sel = ', '.join(cols_opcionales)
+        for row in conn.execute(
+                f"SELECT asig_nombre, {sel} FROM examenes_finales "
+                "WHERE asig_codigo IS NULL OR TRIM(asig_codigo) = ''"):
+            sin_codigo.setdefault(_norm_nombre(row[0]), []).append(tuple(row[1:]))
+        src_cache[siglas] = (nombre_norm, sin_codigo)
+        return src_cache[siglas]
 
     for row in csv_rows:
         codigo       = row['codigo'].strip()
@@ -654,17 +702,32 @@ def sync_examenes_finales(csv_rows, src_conns_by_siglas, dtie_conn, dry_run=Fals
         if not cols_opcionales:
             continue
 
-        src_examenes = src_conn.execute(
+        src_examenes = list(src_conn.execute(
             f"SELECT {', '.join(cols_opcionales)} FROM examenes_finales WHERE asig_codigo = ?",
             (codigo,)
-        ).fetchall()
+        ).fetchall())
+
+        # Fallback: exámenes de origen SIN código, emparejados por nombre
+        # normalizado (nombre en asignaturas del origen o nombre del CSV).
+        nombre_norm, sin_codigo = _get_src_cache(grado_origen, src_conn, cols_opcionales)
+        claves = {nombre_norm.get(codigo), _norm_nombre(nombre)} - {None, ''}
+        extra = []
+        for k in claves:
+            extra.extend(sin_codigo.get(k, []))
+        if extra:
+            log(f"{codigo} ({nombre}): {len(extra)} examen(es) sin código en "
+                f"{grado_origen} emparejados por nombre")
+            src_examenes.extend(extra)
+
+        # Nombre a insertar: el de la tabla asignaturas del DTIE si existe
+        nombre_dtie = dtie_nombres.get(codigo, nombre)
 
         for examen in src_examenes:
             vals_src = dict(zip(cols_opcionales, examen))
 
             # Construir INSERT adaptado al esquema real del DTIE
             insert_cols = ['asig_codigo', 'asig_nombre', 'curso']
-            insert_vals = [codigo, nombre, curso_dtie]
+            insert_vals = [codigo, nombre_dtie, curso_dtie]
 
             for col in ('fecha', 'turno', 'aulas', 'periodo', 'observacion'):
                 if col in vals_src and col in dtie_ef_cols:

@@ -2045,9 +2045,22 @@ function renderFinales() {
   const [pey2,pem2,ped2] = period.end.split('-').map(Number);
   const pS2 = new Date(psy2, psm2-1, psd2);
   const pE2 = new Date(pey2, pem2-1, ped2);
-  function hasExamEntry(curso, nom) {
+  // Normaliza nombres para comparación tolerante (mayúsculas, acentos, puntos)
+  const _normFinalNom = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/\./g, ' ').replace(/\s+/g, ' ').trim();
+  function hasExamEntry(curso, cod, nom) {
+    // Empareja por código cuando el examen lo tiene; si no, por nombre
+    // normalizado. Las asignaturas anuales duplicadas ('cod:1C'/'cod:2C')
+    // se emparejan solo por nombre para distinguir sus dos convocatorias.
+    const isDup   = String(cod).includes(':');
+    const codReal = String(cod).split(':')[0];
+    const nomN    = _normFinalNom(nom);
     return FINALES_DATA.some(f => {
-      if (f.curso !== curso || f.asig_nombre !== nom) return false;
+      if (String(f.curso) !== String(curso)) return false;
+      const fCod  = (f.asig_codigo || '').trim();
+      const okCod = !isDup && fCod && fCod === codReal;
+      const okNom = _normFinalNom(f.asig_nombre) === nomN;
+      if (!okCod && !okNom) return false;
       const [fy,fm,fd] = f.fecha.split('-').map(Number);
       const d = new Date(fy, fm-1, fd);
       return d >= pS2 && d <= pE2;
@@ -2065,7 +2078,7 @@ function renderFinales() {
     const items = asigsCurso.map(([cod, nom]) => {
       const key       = `${currentFinalPeriod}|${curso}|${cod}`;
       const checked   = !FINALES_EXCLUIDAS.has(key);
-      const hasExam   = hasExamEntry(curso, nom);
+      const hasExam   = hasExamEntry(curso, cod, nom);
       if (checked)  totalMarcadas++;
       if (hasExam)  totalConExamen++;
       return `<label class="final-checklist-item${checked ? '' : ' unchecked'}"
