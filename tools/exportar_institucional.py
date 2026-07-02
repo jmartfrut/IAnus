@@ -456,6 +456,13 @@ def build_rows(grupos, data_by_grupo, config, weeks_map, by_code, by_name, af_to
             except (ValueError, TypeError):
                 pass
 
+    # Años candidatos extraídos de weeks.json. Fallback para grados cuyo
+    # config.json no define 'calendario' (p.ej. los DTIE generados por
+    # nuevo_dtie.py, que llevan 'calendario': {}). Dentro de un mismo curso
+    # académico cada mes pertenece a un único año, por lo que probar los
+    # años presentes en weeks.json resuelve la fecha sin ambigüedad.
+    years_weeks = sorted({int(k[:4]) for k in weeks_map if k[:4].isdigit()})
+
     all_rows = []
 
     for g in grupos:
@@ -472,27 +479,26 @@ def build_rows(grupos, data_by_grupo, config, weeks_map, by_code, by_name, af_to
         grupo_aula_default = g.get('aula', '')
 
         year = cuat_year.get(cuat)
+        # Si el config no define año para este cuatrimestre, probar los años
+        # presentes en weeks.json (fallback para DTIE y grupos anuales).
+        years_to_try = [year] if year is not None else years_weeks
 
         # ── Mapeo semana_interna → semana_real ──────────────────────────────
         semana_to_real = {}
         for sem_num, sem_info in semanas.items():
-            if year is None:
-                continue
-            d = parse_semana_start(sem_info['descripcion'], year)
-            if d is None:
-                continue
-            d_str = d.strftime('%Y-%m-%d')
-            real = weeks_map.get(d_str)
-            if real is not None:
-                semana_to_real[sem_num] = real
-            else:
-                # Buscar la semana del lunes de esa fecha (por si hay desfase de días)
-                # Retrocede al lunes de la semana
-                lunes = d - timedelta(days=d.weekday())
-                lunes_str = lunes.strftime('%Y-%m-%d')
-                real2 = weeks_map.get(lunes_str)
-                if real2 is not None:
-                    semana_to_real[sem_num] = real2
+            for y in years_to_try:
+                d = parse_semana_start(sem_info['descripcion'], y)
+                if d is None:
+                    continue
+                d_str = d.strftime('%Y-%m-%d')
+                real = weeks_map.get(d_str)
+                if real is None:
+                    # Buscar la semana del lunes de esa fecha (por si hay desfase de días)
+                    lunes = d - timedelta(days=d.weekday())
+                    real = weeks_map.get(lunes.strftime('%Y-%m-%d'))
+                if real is not None:
+                    semana_to_real[sem_num] = real
+                    break
 
         # ── Consolidar clases por clave ──────────────────────────────────────
         # Key: (nombre, codigo, typologyname, dia, franja_label, subgrupo_norm, classroom)
