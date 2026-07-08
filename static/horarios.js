@@ -7124,8 +7124,9 @@ async function exportCoordPDF() {
       await new Promise(r => setTimeout(r, 120));
 
       setPdfProgress(65, 'Capturando imagen…');
+      const capScale = Math.min(3, 14000 / totalW);  // nitidez alta sin superar límites de canvas
       const canvas = await html2canvas(cap, {
-        scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
+        scale: capScale, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
         windowWidth: totalW, width: totalW
       });
       if (!canvas) throw new Error('html2canvas devolvió null');
@@ -7136,7 +7137,7 @@ async function exportCoordPDF() {
       let iw = availW, ih = availW / ratio;
       if (ih > availH) { ih = availH; iw = availH * ratio; }
       const ox = (PW - iw) / 2;
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', ox, 16, iw, ih);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', ox, 16, iw, ih);
     } finally {
       if (cap.parentNode) cap.parentNode.removeChild(cap);
     }
@@ -7229,8 +7230,9 @@ async function exportCoordAllPDF() {
       </div>`;
       await new Promise(r => setTimeout(r, 80));
 
+      const capScale2 = Math.min(3, 14000 / totalW2);  // nitidez alta sin superar límites de canvas
       const canvas = await html2canvas(cap, {
-        scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
+        scale: capScale2, useCORS: true, backgroundColor: '#ffffff', logging: false, allowTaint: false,
         windowWidth: totalW2, width: totalW2
       });
       if (!canvas) { console.warn('html2canvas null, skip grupo'); continue; }
@@ -7243,7 +7245,7 @@ async function exportCoordAllPDF() {
       let iw = availW, ih = availW / ratio;
       if (ih > availH) { ih = availH; iw = availH * ratio; }
       const ox = (PW - iw) / 2;
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', ox, 16, iw, ih);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', ox, 16, iw, ih);
       pagesAdded++;
     }
 
