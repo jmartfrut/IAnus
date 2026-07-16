@@ -6759,7 +6759,7 @@ async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, che
   const notas = notasInput ? notasInput.value : '';
   // Para tipos manuales sin dedicación asignada, no pasar dedicacion al añadir
   // (el usuario la asigna luego con setCoordDedicacion)
-  await fetch('/api/coordinacion/set', {
+  const resp = await fetch('/api/coordinacion/set', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
@@ -6768,6 +6768,12 @@ async function toggleCoordActividad(grupoKey, semanaNum, asignaturaId, tipo, che
       notas: notas, dia: dia || null, dedicacion: null, action: checked ? 'add' : 'remove'
     })
   });
+  let result = null;
+  try { result = await resp.json(); } catch (e) { /* respuesta no JSON */ }
+  if (!resp.ok || !result || result.ok === false) {
+    alert('No se pudo guardar la actividad: ' +
+          (result && result.error ? result.error : `error ${resp.status}`));
+  }
   // Recargar datos y re-renderizar la matriz
   const params = new URLSearchParams({
     curso: currentCurso, cuatrimestre: currentCuat, grupo: currentGroup

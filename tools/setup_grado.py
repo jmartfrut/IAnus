@@ -459,10 +459,16 @@ def create_tables(conn):
             tipo_actividad TEXT    NOT NULL,
             notas          TEXT    DEFAULT '',
             sincronizado   INTEGER DEFAULT 0,
-            ts             TEXT    DEFAULT ''
+            ts             TEXT    DEFAULT '',
+            dia            TEXT    DEFAULT NULL,
+            dedicacion     REAL    DEFAULT NULL
         );
+        -- Índice único con COALESCE(dia,''): DEBE coincidir con el ON CONFLICT
+        -- de /api/coordinacion/set (servidor_horarios.py) y con _m20 de migrate_db.py
         CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
-        ON coordinacion_actividades(grupo_key, semana_num, asignatura_id, tipo_actividad);
+        ON coordinacion_actividades(
+            grupo_key, semana_num, asignatura_id, tipo_actividad, COALESCE(dia,'')
+        );
     """)
     conn.commit()
 

@@ -1832,18 +1832,27 @@ def api_get_coordinacion(params):
             dia TEXT DEFAULT NULL
         )
     """)
+    # Garantizar columnas dia/dedicacion en BDs antiguas (antes de tocar el índice)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(coordinacion_actividades)").fetchall()]
+    if "dia" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dia TEXT DEFAULT NULL")
+    if "dedicacion" not in cols:
+        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dedicacion REAL DEFAULT NULL")
+    # Reparar índice único obsoleto: BDs creadas por setup_grado.py antiguos tienen
+    # idx_coord_unique SIN COALESCE(dia,'') y quedaron estampadas a la última versión,
+    # por lo que _m20 nunca lo recreó. El ON CONFLICT de /api/coordinacion/set
+    # requiere el índice con COALESCE; si no coincide, añadir actividades falla.
+    idx = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_coord_unique'"
+    ).fetchone()
+    if idx and 'COALESCE' not in (idx["sql"] or '').upper():
+        conn.execute("DROP INDEX idx_coord_unique")
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_coord_unique
         ON coordinacion_actividades(
             grupo_key, semana_num, asignatura_id, tipo_actividad, COALESCE(dia,'')
         )
     """)
-    # Garantizar columnas dia/dedicacion en BDs antiguas
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(coordinacion_actividades)").fetchall()]
-    if "dia" not in cols:
-        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dia TEXT DEFAULT NULL")
-    if "dedicacion" not in cols:
-        conn.execute("ALTER TABLE coordinacion_actividades ADD COLUMN dedicacion REAL DEFAULT NULL")
     conn.commit()
     g = conn.execute(
         "SELECT id FROM grupos WHERE curso=? AND cuatrimestre=? AND grupo=?",
