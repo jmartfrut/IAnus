@@ -1,0 +1,43 @@
+codigo,nombre,curso,cuatrimestre,creditos,af1,af2,af3,af4,af5,af6
+521101004,Química General,1,1C,6,48,12,0,0,0,8
+521101003,Matemáticas I,1,1C,6,54,0,0,6,0,12
+521101005,Intr. Ingeniería Biomédica,1,1C,6,44,12,4,0,0,6
+521101002,Física I,1,1C,6,48,12,0,0,0,8
+521101001,Informática Aplicada,1,1C,6,40,40,0,0,20,0
+521101009,Biología,1,2C,6,40,20,0,0,0,6
+521101010,Análisis de Circuitos,1,2C,6,45,15,0,0,0,12
+521101008,Matemáticas II,1,2C,6,54,0,0,6,0,12
+521101007,Física II,1,2C,6,48,12,0,0,0,8
+521101006,Estadística Aplicada,1,2C,6,48,0,0,12,0,5
+521102006,Termodinámica Aplicada,1,3C,4,41,0,0,4,0,9
+521102003,Fund. Electrónica Industrial,2,4C,6,45,12,0,3,0,6
+521102004,Inglés Técnico,2,3C,4,20,0,0,17,8,6
+521102001,Expresión Gráfica,2,3C,6,45,45,0,0,15,0
+521102005,Mecánica de Máquinas,2,3C,6,52,6,0,2,0,8
+521102012,Física Médica,2,4C,3,21,3,6,0,0,2
+521102002,Matemáticas III,2,3C,6,60,0,0,0,0,10
+521102008,Ciencia e Ingeniería de Materiales,2,4C,6,45,12,0,3,0,6
+521102007,Anatomía y Fisiología Humana,2,4C,6,46,14,0,0,0,8
+521102010,Ingeniería de los Sistemas de Producción,2,4C,4,30,15,0,0,0,6
+521102011,Regulación Automática,2,4C,4,33,12,0,0,0,8
+521102009,Diseño Asistido por Ordenador,2,4C,4,11,0,0,30,4,4
+521102012,Realidad Virtual en Apl. Biomédicas,3,6C,3,22,0,0,8,0,2
+521103004,Tecnología Medioambiental,3,5C,4,37,8,0,0,0,4
+521102007,Mecánica de Fluidos,3,6C,4,36,6,0,3,0,10
+521103003,Instrumentación Electrónica,3,5C,6,46,14,0,0,0,7
+521103005,Biomateriales,3,5C,6,48,8,0,4,0,6
+521103002,Ingeniería de Control,3,5C,4,30,15,0,0,0,6
+521102011,Procesado de Señales Biomédicas,3,6C,6,45,15,0,0,0,3
+521103001,Electrónica Digital,3,5C,4,37,8,0,0,0,7
+521102008,Sistemas Robotizados,3,6C,6,30,0,0,30,0,12
+521102013,Seguridad Hospitalaria,3,6C,3,10,4,2,12,2,3
+521102009,Transmisión del Calor,3,6C,4,39,2,0,4,0,8
+521103006,Fabricación Aditiva de Prod. Sanitarios,3,5C,4,32,12,1,0,0,4
+521102010,Biomecánica de los Medios Continuos,3,6C,3,20,0,0,10,0,4
+521104001,Organización y Gestión de Empresas,4,8C,6,54,0,0,6,0,9
+521104006,Interop. de equipos médicos,4,7C,6,40,8,8,0,4,4
+521104005,Equipos de Monit. Diag. Y Terapia,4,7C,6,44,12,4,0,0,8
+521104007,Procesado de Imágenes Médicas,4,7C,6,40,20,0,0,0,10
+521104002,Proyectos de Ingeniería,4,7C,6,48,12,0,0,0,6
+521104004,Biomecánica Computacional,4,7C,3,20,2,0,8,0,6
+521104003,Apl. Biomed. Int. Artificial,4,7C,3,22,0,0,8,0,4

@@ -642,6 +642,7 @@ def import_clases_desde_excel(conn, clases_importadas):
         tipo       = clase.get('tipo', '')
         subgrupo   = clase.get('subgrupo', '')
         aula_ov    = clase.get('aula_override', '')
+        observ     = clase.get('observacion', '')
 
         if not codigo or not sem_num or not dia:
             continue
@@ -677,12 +678,15 @@ def import_clases_desde_excel(conn, clases_importadas):
         # Determinar tipo de actividad a partir del campo tipo del Excel
         # LAB → tipo_actividad = 'LAB'  (laboratorio)
         # INFO → tipo_actividad = 'INF' (informática)
+        # EXP → tipo_actividad = 'EXP' (examen parcial; detectado por 'Parcial' en Obs)
         # vacío → tipo_actividad = ''   (sin especificar; el usuario lo asigna en la interfaz)
         tipo_upper = tipo.upper()
         if tipo_upper == 'LAB':
             tipo_actividad = 'LAB'
         elif tipo_upper in ('INFO', 'INF') or tipo_upper.startswith('INFO'):
             tipo_actividad = 'INF'
+        elif tipo_upper == 'EXP':
+            tipo_actividad = 'EXP'
         else:
             tipo_actividad = ''
 
@@ -693,6 +697,8 @@ def import_clases_desde_excel(conn, clases_importadas):
             contenido += f" | {tipo}"
         if subgrupo:
             contenido += f" | Subgrupos: {subgrupo}"
+        if observ:
+            contenido += f" | Obs: {observ}"
 
         for grupo_id in grupo_ids:
             sem_row = conn.execute(
@@ -727,16 +733,16 @@ def import_clases_desde_excel(conn, clases_importadas):
             if existing:
                 conn.execute(
                     "UPDATE clases SET asignatura_id=?, aula=?, tipo=?, subgrupo=?, "
-                    "observacion='', es_no_lectivo=0, contenido=? WHERE id=?",
-                    (asig_id, aula, tipo_actividad, subgrupo, contenido, existing[0])
+                    "observacion=?, es_no_lectivo=0, contenido=? WHERE id=?",
+                    (asig_id, aula, tipo_actividad, subgrupo, observ, contenido, existing[0])
                 )
             else:
                 conn.execute(
                     "INSERT INTO clases "
                     "(semana_id, dia, franja_id, asignatura_id, aula, tipo, subgrupo, "
                     " observacion, es_no_lectivo, contenido) "
-                    "VALUES (?,?,?,?,?,?,?,'',0,?)",
-                    (sem_id, dia, franja_id, asig_id, aula, tipo_actividad, subgrupo, contenido)
+                    "VALUES (?,?,?,?,?,?,?,?,0,?)",
+                    (sem_id, dia, franja_id, asig_id, aula, tipo_actividad, subgrupo, observ, contenido)
                 )
             count_ok += 1
 

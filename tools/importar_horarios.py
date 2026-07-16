@@ -52,7 +52,8 @@ def parse_excel_bytes(file_bytes: bytes, curso: int, cuatrimestre: str, grupo: i
     Returns:
         list of dict con claves:
             semana, dia, franja_label, asig_codigo, asig_nombre,
-            tipo (''|'LAB'|'INFO'), subgrupo, aula_override, curso, cuatrimestre
+            tipo (''|'LAB'|'INF'|'EXP'), subgrupo, aula_override, observacion,
+            curso, cuatrimestre
     """
     try:
         import openpyxl
@@ -190,6 +191,29 @@ def parse_excel_all_cuats(file_bytes: bytes, curso: int) -> dict:
     return result
 
 
+# ─── HELPERS DE TIPO ─────────────────────────────────────────────────────────
+
+def _norm_token(s: str) -> str:
+    """Normaliza un campo de celda: mayúsculas, espacios no separables → espacio,
+    colapsa espacios múltiples."""
+    s = s.upper().replace('\u00a0', ' ').replace('\u2007', ' ').replace('\u202f', ' ')
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def _tipo_from_token(tok: str) -> str:
+    """Mapea un token normalizado a tipo de actividad ('LAB'|'INF'|'').
+    Compara por primera palabra para tolerar variantes: 'LAB', 'LAB.',
+    'LAB 1', 'INF', 'INFO', 'INF.', etc."""
+    if not tok:
+        return ''
+    first = tok.split()[0].rstrip('.:')
+    if first == 'LAB':
+        return 'LAB'
+    if first in ('INF', 'INFO'):
+        return 'INF'
+    return ''
+
+
 # ─── PARSER DE CELDA ─────────────────────────────────────────────────────────
 
 def _parse_celda(val: str) -> list:
@@ -218,25 +242,30 @@ def _parse_celda(val: str) -> list:
         tipo          = ''
         subgrupo      = ''
         aula_override = ''
+        observacion   = ''
 
         for part in [p.strip() for p in resto.split('|') if p.strip()]:
-            pu = part.upper()
-            if pu == 'LAB':
-                tipo = 'LAB'
-            elif pu in ('INFO', 'INF'):
-                tipo = 'INF'
+            pu = _norm_token(part)
+            t  = _tipo_from_token(pu)
+            if t and not pu.startswith('AULA'):
+                tipo = t
             elif pu.startswith('SUBGRUPOS:'):
                 subgrupo = part.split(':', 1)[1].strip()
-            elif pu.startswith('AULA:'):
+            elif pu.startswith('AULA:') or pu.startswith('AULA :'):
                 val_aula = part.split(':', 1)[1].strip()
                 # 'Aula: LAB' / 'Aula: INF' indican tipo de actividad, no aula física
-                if val_aula.upper() == 'LAB':
-                    tipo = 'LAB'
-                elif val_aula.upper() in ('INF', 'INFO'):
-                    tipo = 'INF'
+                t = _tipo_from_token(_norm_token(val_aula))
+                if t:
+                    tipo = t
                 else:
                     aula_override = val_aula
-            # 'OBS:' y otros campos se ignoran intencionadamente
+            elif pu.startswith('OBS:'):
+                observacion = part.split(':', 1)[1].strip()
+            # otros campos se ignoran intencionadamente
+
+        # Si la observación contiene 'PARCIAL', la sesión es un examen parcial
+        if 'PARCIAL' in _norm_token(observacion):
+            tipo = 'EXP'
 
         resultados.append({
             'asig_codigo':    codigo,
@@ -244,6 +273,7 @@ def _parse_celda(val: str) -> list:
             'tipo':           tipo,
             'subgrupo':       subgrupo,
             'aula_override':  aula_override,
+            'observacion':    observacion,
         })
     return resultados
 
@@ -267,6 +297,22 @@ if __name__ == '__main__':
 
     print(f"1C: {len(result['1C'])} clases")
     print(f"2C: {len(result['2C'])} clases")
+
+    # Resumen de tipos detectados (diagnóstico LAB/INF)
+    from collections import Counter
+    tipos = Counter((c['tipo'] or '(sin tipo)', c['aula_override'] or '-')
+                    for cu in ('1C', '2C') for c in result[cu])
+    print("Tipos detectados (tipo, aula):")
+    for (t, a), n in sorted(tipos.items()):
+        print(f"  {t:10} aula={a:10} × {n}")
+
+    if '-v' in sys.argv:
+        for cu in ('1C', '2C'):
+            for c in result[cu]:
+                if c['tipo'] or c['aula_override']:
+                    print(f"  S{c['semana']:>2} {c['dia']:<9} {c['franja_label']:<13} "
+                          f"[{c['asig_codigo']}] tipo={c['tipo'] or '-'} "
+                          f"aula={c['aula_override'] or '-'} sub={c['subgrupo'] or '-'}")
     print(f"Asignaturas: {len(result['asignaturas'])}")
     for a in result['asignaturas']:
         print(f"  [{a['codigo']}] {a['nombre']} (C{a['curso']} {a['cuatrimestre']})")
